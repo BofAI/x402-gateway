@@ -41,11 +41,6 @@ def start(
         "--openapi",
         help="Upstream OpenAPI URL; when set, the gateway exposes a filtered /openapi.json.",
     ),
-    reload: bool = typer.Option(
-        False,
-        "--reload",
-        help="Watch provider.yml / --providers-dir for changes and hot-reload.",
-    ),
     quiet: bool = typer.Option(False, "--quiet", help="Suppress the startup banner."),
 ) -> None:
     """Start the gateway."""
@@ -66,7 +61,6 @@ def start(
             host=host,
             port=port,
             openapi_url=openapi_url,
-            reload=reload,
             print_banners=not quiet,
         )
     except StartupError as exc:

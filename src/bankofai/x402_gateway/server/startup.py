@@ -9,8 +9,6 @@
   5. Probes recipient native-token balance (advisory)
   6. Prints the rich banner
   7. Optionally mounts a filtered `/openapi.json`
-  8. Optionally arms the watchfiles hot-reload task
-
 Any of steps 1-3 failing aborts startup; steps 4-5 are advisory and degrade
 to a yellow/red banner. The CLI maps thrown errors to `typer.Exit(code=1)`.
 """
@@ -40,7 +38,6 @@ from bankofai.x402_gateway.server.recipient import (
     resolve_recipient,
 )
 from bankofai.x402_gateway.server.registry import ProviderRegistry
-from bankofai.x402_gateway.server.reload import start_reload_watcher
 from bankofai.x402_gateway.server.signer import SignerHandle, resolve_signer
 
 logger = logging.getLogger(__name__)
@@ -166,7 +163,6 @@ def build_app(
     host: str = "127.0.0.1",
     port: int = 4020,
     openapi_url: Optional[str] = None,
-    reload: bool = False,
 ) -> FastAPI:
     """Build a FastAPI app whose startup hook seeds the provider registry.
 
@@ -202,17 +198,5 @@ def build_app(
             from bankofai.x402_gateway.server.openapi import mount_openapi
 
             mount_openapi(app, registry, openapi_url)
-
-        if reload:
-            paths = [p for p in (provider_yml, providers_dir) if p is not None]
-            if paths:
-                start_reload_watcher(
-                    paths,
-                    registry,
-                    sandbox=sandbox,
-                    profile=profile,
-                    host=host,
-                    port=port,
-                )
 
     return app
