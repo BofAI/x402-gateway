@@ -1,0 +1,64 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        X402_SDK_SPEC: "${X402_SDK_SPEC:-bankofai-x402>=0.6.0}"
+    container_name: x402-gateway
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      X402_GATEWAY_PROVIDERS_DIR: ${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}
+      X402_GATEWAY_PORT: ${X402_GATEWAY_PORT:-4020}
+      X402_GATEWAY_LOG_LEVEL: ${X402_GATEWAY_LOG_LEVEL:-info}
+    ports:
+      - "${X402_GATEWAY_PORT:-4020}:${X402_GATEWAY_PORT:-4020}"
+    volumes:
+      - ./providers:${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}:ro
+    command:
+      - x402-gateway
+      - server
+      - start
+      - --providers-dir
+      - ${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}
+      - --host
+      - 0.0.0.0
+      - --port
+      - ${X402_GATEWAY_PORT:-4020}
+      - --quiet
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >
+          python -c "import os, urllib.request;
+          port=os.environ.get('X402_GATEWAY_PORT','4020');
+          urllib.request.urlopen(f'http://127.0.0.1:{port}/__402/health', timeout=3).read()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  catalog-build:
+    profiles:
+      - tools
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        X402_SDK_SPEC: "${X402_SDK_SPEC:-bankofai-x402>=0.6.0}"
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./providers:${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}:ro
+      - ./dist:/app/dist
+    command:
+      - x402-gateway
+      - catalog
+      - build
+      - ${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}
+      - --dist-dir
+      - /app/dist

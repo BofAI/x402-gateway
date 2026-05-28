@@ -1,6 +1,5 @@
-.DS_Store
-
-.venv/
+.git
+.venv
 .env
 .env.*
 !.env.example
@@ -17,3 +16,5 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+
+.DS_Store

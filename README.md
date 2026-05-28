@@ -61,6 +61,51 @@ x402-gateway catalog build providers --dist-dir dist
 x402-gateway catalog search providers weather
 ```
 
+## 官方中心服务部署
+
+官方 gateway 以一个常驻 HTTP 服务运行,读取仓库里的 `providers/` 目录。当前阶段不需要 DB:provider 配置、价格、收款地址、上游地址、catalog 展示信息都由文件持久化,随仓库提交和部署发布。容器重启后会重新读取挂载的 `providers/`,不会丢配置。
+
+本地或服务器启动:
+
+```bash
+cp .env.example .env
+docker compose up --build -d gateway
+curl http://127.0.0.1:4020/__402/health
+```
+
+部署形态:
+
+```text
+Buyer / Agent
+  -> https://gateway.bankofai.io/providers/<provider>/<path>
+  -> x402-gateway container
+  -> provider upstream API
+
+Operator
+  -> commit providers/<provider>/provider.yml + listing.md
+  -> deploy/restart gateway
+  -> /__402/providers and /__402/endpoints show loaded providers
+```
+
+`docker-compose.yml` 默认把本仓库 `./providers` 只读挂载到容器 `/app/providers`。上游 API key、OAuth client secret、HMAC secret 等运行时密钥放在 `.env` 或线上 secret manager,在 `provider.yml` 里只引用环境变量名。
+
+生成 catalog 静态目录:
+
+```bash
+docker compose --profile tools run --rm catalog-build
+```
+
+输出在 `dist/`,用于后续发布给 CLI、MCP 或 agent 做 API 发现。gateway 服务本身只负责 402 challenge、verify、settle、转发和管理端点。
+
+生产部署时至少保留这些探针:
+
+```text
+/__402/health      liveness,返回 ok
+/__402/providers   当前加载的 provider、状态、错误
+/__402/endpoints   当前 endpoint、价格、network、currency
+/__402/verify      只 verify 不 settle,用于联调
+```
+
 ## 与 pay.sh 的关系
 
 设计对标 [`solana-foundation/pay`](https://github.com/solana-foundation/pay) 的 gateway 反代和 catalog 工具链两部分。支付协议层完全用我们自己的 bankofai-x402(TRON + BSC,跟 pay.sh 的 Solana x402/MPP 无关);gateway 的 YAML 驱动 + endpoint allowlist + STRIP_HEADERS 模式照搬;catalog 的 PAY.md / scaffold / probe / build 思路改名 listing.md 用上。
