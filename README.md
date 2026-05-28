@@ -21,6 +21,32 @@ providers/acme-weather/
   listing.md
 ```
 
+## Provider 接入方式
+
+早期由运营人员维护 `providers/` 目录。商家通过邮件、表单或线下沟通提交接入信息,运营审核后把配置提交到仓库。
+
+最小闭环:
+
+1. 新建 `providers/<provider-name>/provider.yml`
+2. 在 `provider.yml` 里配置上游 `forward_url`、收款地址 `operator.recipient`、network / currency、endpoint 和价格
+3. 需要 catalog 展示时补 `listing.md`,或用 `catalog generate` 从 `provider.yml` 生成
+4. 运行 `x402-gateway server check providers/<provider-name>/provider.yml`
+5. 部署时运行 `x402-gateway server start --providers-dir providers`
+
+买家访问路径统一为:
+
+```text
+GET /providers/<provider-name>/<endpoint-path>
+```
+
+例如:
+
+```text
+GET /providers/acme-weather/v1/current
+```
+
+Gateway 启动时一次性读取 `providers/**/provider.yml`。同一个进程内所有 provider 进入同一个 registry,`/__402/providers` 和 `/__402/endpoints` 用来查看当前加载结果。
+
 ## 常用命令
 
 ```bash
