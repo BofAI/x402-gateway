@@ -1,0 +1,76 @@
+[build-system]
+requires = ["hatchling>=1.18.0,<1.22.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bankofai-x402-gateway"
+version = "0.6.1.dev0"
+description = "YAML-driven x402 payment gateway for provider APIs"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+authors = [
+    { name = "BankofAI", email = "dev@bankofai.io" }
+]
+keywords = ["x402", "gateway", "payment", "tron", "bsc"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "bankofai-x402>=0.6.0",
+    "fastapi>=0.100.0",
+    "httpx>=0.25.0",
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0.0",
+    "typer>=0.9.0",
+    "uvicorn>=0.23.0",
+    "rich>=13.0.0",
+    "python-frontmatter>=1.0.0",
+    "markdown-it-py>=3.0.0",
+    "watchfiles>=0.21.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "mypy>=1.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+x402-gateway = "bankofai.x402_gateway.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/BofAI/x402-gateway"
+Repository = "https://github.com/BofAI/x402-gateway"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bankofai"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.mypy]
+python_version = "3.11"
+# Strict mode is the goal but bankofai-x402 still emits Any in places we wrap;
+# keep the safety net on the gateway side without forcing strict across the boundary.
+ignore_missing_imports = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+check_untyped_defs = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

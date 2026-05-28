@@ -1,0 +1,250 @@
+"""Integration tests for the proxy router (gateway + upstream + facilitator)."""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import json
+
+import httpx
+from bankofai.x402.encoding import encode_payment_payload
+from bankofai.x402.types import (
+    PaymentPayload,
+    PaymentPayloadData,
+    SettleResponse,
+    SupportedResponse,
+    VerifyResponse,
+)
+from fastapi.testclient import TestClient
+
+from bankofai.x402_gateway.config.loader import load_provider_file
+from bankofai.x402_gateway.facilitator.client import FacilitatorAPI
+from bankofai.x402_gateway.server.app import create_app
+from bankofai.x402_gateway.server.payment import (
+    PAYMENT_REQUIRED_HEADER,
+    PAYMENT_RESPONSE_HEADER,
+    PAYMENT_SIGNATURE_HEADER,
+    build_payment_requirements,
+)
+from bankofai.x402_gateway.server.registry import ProviderRegistry
+
+
+class _FakeFacilitator:
+    """Records every call and returns scripted responses."""
+
+    def __init__(
+        self,
+        *,
+        verify_result: bool = True,
+        settle_result: bool = True,
+        tx_hash: str = "0xdeadbeef",
+    ) -> None:
+        self.verify_calls: list = []
+        self.settle_calls: list = []
+        self._verify_result = verify_result
+        self._settle_result = settle_result
+        self._tx_hash = tx_hash
+
+    async def supported(self) -> SupportedResponse:
+        return SupportedResponse(kinds=[])
+
+    async def verify(self, payload, requirements) -> VerifyResponse:
+        self.verify_calls.append((payload, requirements))
+        if self._verify_result:
+            return VerifyResponse(isValid=True)
+        return VerifyResponse(isValid=False, invalidReason="forced_fail")
+
+    async def settle(self, payload, requirements) -> SettleResponse:
+        self.settle_calls.append((payload, requirements))
+        if self._settle_result:
+            return SettleResponse(
+                success=True, transaction=self._tx_hash, network=requirements.network
+            )
+        return SettleResponse(success=False, errorReason="forced_fail")
+
+
+def _patch_provider_facilitator(
+    registry: ProviderRegistry, name: str, facilitator: FacilitatorAPI
+) -> None:
+    entry = registry.get_entry(name)
+    assert entry is not None
+    entry.facilitator = facilitator
+
+
+def _build_test_client(
+    provider_yml_path,
+    facilitator: FacilitatorAPI | None = None,
+    *,
+    transport: httpx.MockTransport | None = None,
+) -> tuple[TestClient, ProviderRegistry, _FakeFacilitator]:
+    registry = ProviderRegistry()
+    app = create_app(registry)
+
+    async def setup() -> None:
+        spec = load_provider_file(provider_yml_path)
+        await registry.replace_all([spec])
+
+    asyncio.run(setup())
+
+    fac = facilitator or _FakeFacilitator()
+    _patch_provider_facilitator(registry, "acme-weather", fac)
+
+    if transport is not None:
+        # monkey-patch httpx.AsyncClient default to inject the upstream mock
+        original_init = httpx.AsyncClient.__init__
+
+        def patched_init(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            kwargs.setdefault("transport", transport)
+            return original_init(self, *args, **kwargs)
+
+        httpx.AsyncClient.__init__ = patched_init  # type: ignore[assignment]
+
+    return TestClient(app), registry, fac  # type: ignore[return-value]
+
+
+def test_management_endpoints(provider_yml_path) -> None:
+    client, _, _ = _build_test_client(provider_yml_path)
+    try:
+        assert client.get("/__402/health").json() == "ok"
+        providers = client.get("/__402/providers").json()
+        assert providers[0]["name"] == "acme-weather"
+
+        endpoints = client.get("/__402/endpoints").json()
+        assert endpoints[0]["gatewayPath"] == "/providers/acme-weather/v1/current"
+        assert endpoints[0]["metered"] is True
+        assert endpoints[1]["metered"] is False
+    finally:
+        client.close()
+
+
+def test_metered_endpoint_returns_402_when_unpaid(provider_yml_path) -> None:
+    client, _, _ = _build_test_client(provider_yml_path)
+    try:
+        response = client.get("/providers/acme-weather/v1/current")
+        assert response.status_code == 402
+
+        body = response.json()
+        assert body["accepts"][0]["network"] == "tron:mainnet"
+
+        header = response.headers.get(PAYMENT_REQUIRED_HEADER)
+        assert header is not None
+        decoded = json.loads(base64.b64decode(header).decode())
+        assert decoded["x402Version"] == 2
+    finally:
+        client.close()
+
+
+def test_unknown_path_returns_404(provider_yml_path) -> None:
+    client, _, _ = _build_test_client(provider_yml_path)
+    try:
+        response = client.get("/providers/acme-weather/favicon.ico")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "endpoint not in allowlist"
+    finally:
+        client.close()
+
+
+def test_free_endpoint_proxies_upstream(provider_yml_path) -> None:
+    """Hit the /health endpoint: no metering, should forward to upstream."""
+
+    def upstream_handler(request: httpx.Request) -> httpx.Response:
+        # We do not require the URL match exactly; just simulate upstream 200.
+        return httpx.Response(200, json={"healthy": True})
+
+    transport = httpx.MockTransport(upstream_handler)
+    client, _, _ = _build_test_client(provider_yml_path, transport=transport)
+    try:
+        response = client.get("/providers/acme-weather/health")
+        assert response.status_code == 200
+        assert response.json() == {"healthy": True}
+    finally:
+        client.close()
+        # restore httpx.AsyncClient.__init__
+        import importlib
+
+        importlib.reload(httpx)
+
+
+def test_metered_endpoint_settles_and_forwards(provider_yml_path) -> None:
+    """Send a valid PAYMENT-SIGNATURE -> facilitator verify+settle -> upstream call."""
+
+    upstream_calls: list[httpx.Request] = []
+
+    def upstream_handler(request: httpx.Request) -> httpx.Response:
+        upstream_calls.append(request)
+        return httpx.Response(200, json={"current": "sunny"})
+
+    transport = httpx.MockTransport(upstream_handler)
+    facilitator = _FakeFacilitator()
+    client, _, fac = _build_test_client(
+        provider_yml_path, facilitator=facilitator, transport=transport
+    )
+
+    try:
+        # build a payload matching the gateway's requirements
+        from bankofai.x402_gateway.config.loader import load_provider_file
+
+        spec = load_provider_file(provider_yml_path)
+        _, requirements = build_payment_requirements(spec, spec.endpoints[0])
+
+        payload = PaymentPayload(
+            x402Version=2,
+            accepted=requirements[0],
+            payload=PaymentPayloadData(signature="0xdeadbeef"),
+        )
+        header = encode_payment_payload(payload)
+
+        response = client.get(
+            "/providers/acme-weather/v1/current",
+            headers={PAYMENT_SIGNATURE_HEADER: header},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json() == {"current": "sunny"}
+        assert response.headers.get(PAYMENT_RESPONSE_HEADER) is not None
+
+        assert len(fac.verify_calls) == 1
+        assert len(fac.settle_calls) == 1
+        assert len(upstream_calls) == 1
+    finally:
+        client.close()
+
+
+def test_metered_endpoint_400s_when_verify_fails(provider_yml_path) -> None:
+    facilitator = _FakeFacilitator(verify_result=False)
+
+    upstream_calls: list[httpx.Request] = []
+
+    def upstream_handler(request: httpx.Request) -> httpx.Response:
+        upstream_calls.append(request)
+        return httpx.Response(200, json={})
+
+    transport = httpx.MockTransport(upstream_handler)
+    client, _, fac = _build_test_client(
+        provider_yml_path, facilitator=facilitator, transport=transport
+    )
+
+    try:
+        from bankofai.x402_gateway.config.loader import load_provider_file
+
+        spec = load_provider_file(provider_yml_path)
+        _, requirements = build_payment_requirements(spec, spec.endpoints[0])
+
+        payload = PaymentPayload(
+            x402Version=2,
+            accepted=requirements[0],
+            payload=PaymentPayloadData(signature="0xdeadbeef"),
+        )
+        header = encode_payment_payload(payload)
+
+        response = client.get(
+            "/providers/acme-weather/v1/current",
+            headers={PAYMENT_SIGNATURE_HEADER: header},
+        )
+
+        assert response.status_code == 400
+        assert response.json()["invalidReason"] == "forced_fail"
+        assert len(fac.settle_calls) == 0
+        assert len(upstream_calls) == 0
+    finally:
+        client.close()

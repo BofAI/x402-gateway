@@ -1,0 +1,49 @@
+name: acme-weather
+title: "Acme Weather API"
+description: "Current weather API"
+category: data
+version: v1
+
+forward_url: https://internal.acme.example
+
+routing:
+  type: proxy
+  auth:
+    method: header
+    key: Authorization
+    prefix: "Bearer "
+    value_from_env: ACME_API_TOKEN
+
+operator:
+  network: tron-mainnet
+  currencies:
+    usd: ["USDT", "USDD"]
+  recipient: "TProviderWalletBase58"
+  scheme: exact_permit
+  valid_for_seconds: 300
+  signer:
+    backend: local_secure
+    profile: prod-tron
+
+recipients:
+  vendor:
+    account: "TVendorWalletBase58"
+    label: "Acme vendor"
+
+endpoints:
+  - method: GET
+    path: /v1/current
+    description: "Current weather for a city"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.002
+              splits:
+                - recipient: vendor
+                  percent: 70
+
+  - method: GET
+    path: /health
