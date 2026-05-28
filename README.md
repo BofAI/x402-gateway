@@ -21,6 +21,20 @@ providers/acme-weather/
   listing.md
 ```
 
+## 常用命令
+
+```bash
+x402-gateway server start --providers-dir providers
+x402-gateway server check providers/acme-weather/provider.yml
+x402-gateway server scaffold acme-weather
+
+x402-gateway catalog scaffold acme-weather https://api.example.com/openapi.json
+x402-gateway catalog generate providers/acme-weather/provider.yml
+x402-gateway catalog check providers
+x402-gateway catalog build providers --dist-dir dist
+x402-gateway catalog search providers weather
+```
+
 ## 与 pay.sh 的关系
 
 设计对标 [`solana-foundation/pay`](https://github.com/solana-foundation/pay) 的 gateway 反代和 catalog 工具链两部分。支付协议层完全用我们自己的 bankofai-x402(TRON + BSC,跟 pay.sh 的 Solana x402/MPP 无关);gateway 的 YAML 驱动 + endpoint allowlist + STRIP_HEADERS 模式照搬;catalog 的 PAY.md / scaffold / probe / build 思路改名 listing.md 用上。

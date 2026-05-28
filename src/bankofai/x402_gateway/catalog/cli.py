@@ -20,6 +20,7 @@ from bankofai.x402_gateway.catalog.scaffold import (
     scaffold_listing,
     scaffold_listing_with_fetch,
 )
+from bankofai.x402_gateway.catalog.search import search_catalog
 from bankofai.x402_gateway.config.loader import load_provider_file
 
 app = typer.Typer(help="Catalog tools")
@@ -184,3 +185,43 @@ def build(
         )
     )
     typer.echo(str(dist_dir))
+
+
+@app.command()
+def search(
+    providers_root: Path = typer.Argument(..., help="Root of the providers/ tree."),
+    query: str = typer.Argument(..., help="Search text."),
+    limit: int = typer.Option(20, "--limit", "-n", help="Maximum result count."),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON instead of a table."
+    ),
+) -> None:
+    """Search local provider.yml / listing.md catalog metadata."""
+    hits = search_catalog(providers_root, query, limit=limit)
+
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {"query": query, "count": len(hits), "results": [hit.to_dict() for hit in hits]},
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+
+    if not hits:
+        typer.echo("no matches")
+        raise typer.Exit(code=1)
+
+    for hit in hits:
+        tags = ",".join(hit.tags) if hit.tags else "-"
+        typer.echo(
+            f"{hit.fqn:32s}  score={hit.score:<3d}  "
+            f"category={hit.category:12s}  tags={tags}"
+        )
+        typer.echo(f"  {hit.title}")
+        typer.echo(f"  {hit.description}")
+        if hit.endpoints:
+            for endpoint in hit.endpoints[:3]:
+                typer.echo(f"  {endpoint.method:6s} {endpoint.gateway_path}")
+        typer.echo("")
