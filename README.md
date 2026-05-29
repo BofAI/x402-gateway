@@ -68,6 +68,7 @@ Default local ports:
 ```text
 Gateway:      http://127.0.0.1:4020
 Facilitator:  http://127.0.0.1:4021
+Upstream:     http://127.0.0.1:8080
 ```
 
 The default `.env.example` points providers at:
@@ -115,6 +116,16 @@ curl http://127.0.0.1:4020/providers/acme-weather/v1/current
 ```
 
 If the endpoint is paid and the request has no x402 payment header, the gateway returns `402 Payment Required`.
+
+The Compose stack also runs a demo upstream API. This lets the local gateway test a real proxy target:
+
+```bash
+curl http://127.0.0.1:8080/health
+curl http://127.0.0.1:4020/providers/acme-weather/health
+curl -i http://127.0.0.1:4020/providers/acme-weather/v1/current?city=Singapore
+```
+
+The first two calls should return `200`. The paid weather endpoint should return `402` until the client retries with a valid x402 payment header.
 
 ## Catalog Usage
 

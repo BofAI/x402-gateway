@@ -4,8 +4,8 @@ description: "Current weather API"
 category: data
 version: v1
 
-forward_url: https://internal.acme.example
-openapi_url: https://api.example.com/openapi.json
+forward_url: http://upstream:8080
+openapi_url: http://upstream:8080/openapi.json
 
 display:
   service_url: ${X402_GATEWAY_PUBLIC_BASE_URL}/providers/acme-weather

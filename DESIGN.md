@@ -44,6 +44,16 @@ Responsibilities:
 
 The Docker Compose development stack includes a mock facilitator. It supports `/supported`, `/verify`, `/settle`, and control endpoints for debugging. This is a development dependency only. Production should point `X402_FACILITATOR_URL` at the official facilitator.
 
+### Demo Upstream
+
+The local Docker Compose stack also includes a demo upstream API. The sample provider points `forward_url` at this service so debugging covers the full path:
+
+```text
+client -> gateway -> facilitator -> gateway -> demo upstream
+```
+
+The demo upstream exposes `/health` and `/v1/current`. `/v1/current` requires the gateway-injected bearer token, which verifies that upstream authentication injection works.
+
 ## Data Model
 
 Provider runtime fields:
@@ -116,6 +126,7 @@ Basic development is complete when:
 - catalog build produces `dist/skills.json`
 - catalog search returns matching providers
 - paid routes return x402 challenges
+- free routes proxy successfully to the demo upstream
 - local facilitator receives verify and settle calls during paid-flow tests
 
 The current codebase satisfies the infrastructure and discovery portions. The next stage is paid-flow debugging with real client signatures and testnet settlement.
