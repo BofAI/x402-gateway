@@ -5,6 +5,23 @@ category: data
 version: v1
 
 forward_url: https://internal.acme.example
+openapi_url: https://api.example.com/openapi.json
+
+display:
+  service_url: ${X402_GATEWAY_PUBLIC_BASE_URL}/providers/acme-weather
+  logo: https://example.com/logo.png
+  tags: ["weather", "data"]
+
+discovery:
+  use_case: "Use for city-level weather lookup"
+  spend_aware_usage:
+    - "Call current weather before forecast when a single current snapshot is enough."
+  when_to_use:
+    - "Use when an agent needs paid current weather data for a city."
+  when_not_to_use:
+    - "Do not use for historical climate analysis."
+  request_examples:
+    - "GET /providers/acme-weather/v1/current?city=Singapore"
 
 routing:
   type: proxy

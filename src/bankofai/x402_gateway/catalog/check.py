@@ -79,6 +79,8 @@ async def _resolve_probe_targets(
     *,
     client: httpx.AsyncClient,
 ) -> list[tuple[str, str]]:
+    if listing.probe_targets:
+        return listing.probe_targets
     if listing.spec.openapi and listing.spec.openapi.url:
         try:
             document = await fetch_openapi(listing.spec.openapi.url)

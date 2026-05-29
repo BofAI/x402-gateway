@@ -39,6 +39,7 @@ services:
       X402_GATEWAY_PROVIDERS_DIR: ${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}
       X402_GATEWAY_PORT: ${X402_GATEWAY_PORT:-4020}
       X402_GATEWAY_LOG_LEVEL: ${X402_GATEWAY_LOG_LEVEL:-info}
+      X402_GATEWAY_PUBLIC_BASE_URL: ${X402_GATEWAY_PUBLIC_BASE_URL:-http://host.docker.internal:4020}
       X402_FACILITATOR_URL: ${X402_FACILITATOR_URL:-http://facilitator:4021}
     ports:
       - "${X402_GATEWAY_PORT:-4020}:${X402_GATEWAY_PORT:-4020}"
@@ -83,6 +84,7 @@ services:
         required: false
     environment:
       X402_FACILITATOR_URL: ${X402_FACILITATOR_URL:-http://facilitator:4021}
+      X402_GATEWAY_PUBLIC_BASE_URL: ${X402_GATEWAY_PUBLIC_BASE_URL:-http://host.docker.internal:4020}
     volumes:
       - ./providers:${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}:ro
       - ./dist:/app/dist

@@ -45,6 +45,7 @@ class DiscoveredListing:
     section_titles: list[str] = field(default_factory=list)
     missing_required_sections: list[str] = field(default_factory=list)
     missing_advisory_sections: list[str] = field(default_factory=list)
+    probe_targets: list[tuple[str, str]] = field(default_factory=list)
     source: str = "listing.md"  # "provider.yml" | "listing.md"
 
 
@@ -119,6 +120,7 @@ def _discover_from_provider_yml(
         section_titles=sections,
         missing_required_sections=missing_required,
         missing_advisory_sections=missing_advisory,
+        probe_targets=[(endpoint.method, endpoint.path) for endpoint in provider_spec.endpoints],
         source="provider.yml",
     )
 
