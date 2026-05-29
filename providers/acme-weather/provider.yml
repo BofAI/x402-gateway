@@ -20,6 +20,7 @@ operator:
     usd: ["USDT", "USDD"]
   recipient: "TProviderWalletBase58"
   scheme: exact_permit
+  facilitator_url: ${X402_FACILITATOR_URL}
   valid_for_seconds: 300
   signer:
     backend: local_secure

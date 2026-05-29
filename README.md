@@ -89,6 +89,14 @@ Operator
 
 `docker-compose.yml` 默认把本仓库 `./providers` 只读挂载到容器 `/app/providers`。上游 API key、OAuth client secret、HMAC secret 等运行时密钥放在 `.env` 或线上 secret manager,在 `provider.yml` 里只引用环境变量名。
 
+开发环境会同时启动一个本地 mock facilitator:
+
+```text
+gateway -> http://facilitator:4021
+```
+
+`provider.yml` 通过 `${X402_FACILITATOR_URL}` 读取 facilitator 地址。当前 `.env.example` 默认指向 compose 里的本地 facilitator;正式环境改成线上 facilitator 地址即可。
+
 生成 catalog 静态目录:
 
 ```bash
