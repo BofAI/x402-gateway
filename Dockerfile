@@ -19,7 +19,7 @@ COPY src/ ./src/
 
 RUN pip install --upgrade pip \
     && pip install "${X402_SDK_SPEC}" \
-    && pip install --no-deps .
+    && pip install .
 
 RUN useradd -r -u 1000 -g users -s /usr/sbin/nologin x402-gateway \
     && mkdir -p /app/providers /app/dist \
