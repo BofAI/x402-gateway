@@ -150,6 +150,27 @@ x402-gateway catalog search providers weather
 
 The same `dist/skills.json` can be consumed by `x402-cli gateway search`.
 
+The public marketplace catalog lives in `x402-catelog`. A provider should not
+submit `provider.yml`; after running their own gateway, they export public PR
+files with:
+
+```bash
+x402-cli catalog export-gateway https://gateway.example.com \
+  --provider acme-weather \
+  --output-dir providers/acme-weather
+```
+
+The exported files are:
+
+```text
+providers/acme-weather/catalog.json
+providers/acme-weather/pay.md
+```
+
+Those files contain public service, endpoint, price, and gateway URL metadata
+only. Upstream auth, API keys, `.env`, and `provider.yml` stay on the provider's
+machine.
+
 ## Official Service Shape
 
 The official gateway service is a long-running HTTP process:
@@ -192,6 +213,7 @@ x402-gateway catalog pay-assets providers/acme-weather/provider.yml
 x402-gateway catalog check providers
 x402-gateway catalog build providers --dist-dir dist
 x402-gateway catalog search providers weather
+x402-cli catalog export-gateway http://127.0.0.1:4020 --provider acme-weather
 
 docker compose up --build -d gateway
 docker compose ps

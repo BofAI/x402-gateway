@@ -149,7 +149,7 @@ x402-gateway/
 - verify / settle。
 - proxy upstream。
 - 提供 `/__402/health`、`/__402/endpoints` 等本地诊断接口。
-- 提供导出公开 catalog 数据的能力，供 `x402-cli gateway export-catalog` 使用。
+- 提供导出公开 catalog 数据的能力，供 `x402-cli catalog export-gateway` 使用。
 
 不负责：
 
@@ -442,7 +442,7 @@ Use for city-level weather lookup.
 Example:
 
 ```bash
-x402-cli curl "https://gateway.acme-weather.com/providers/acme-weather/v1/current?city=Singapore"
+x402-cli pay "https://gateway.acme-weather.com/providers/acme-weather/v1/current?city=Singapore"
 ```
 
 ## Payment
@@ -460,83 +460,83 @@ x402-cli curl "https://gateway.acme-weather.com/providers/acme-weather/v1/curren
 
 校验规则：
 
-- `FQN` 必须和 `catalog.json.provider.name` 一致。
-- `Gateway` 必须和 `catalog.json.provider.serviceUrl` 一致。
+- `FQN` 必须和 `catalog.json.fqn` 一致。
+- `Gateway` 必须和 `catalog.json.serviceUrl` 一致。
 - endpoint URL 必须和 `catalog.json.endpoints[].url` 一致。
 - price、network、currency 必须和 `catalog.json` 一致。
 - 不允许出现 secret-like 字段。
 
 ### `catalog.json` 模板
 
-`catalog.json` 是一期机器真相源。它由表单或 `x402-cli gateway export-catalog` 生成，用户可以编辑公开文案，但不能加入 runtime 配置。
+`catalog.json` 是一期机器真相源。它由表单或 `x402-cli catalog export-gateway` 生成，用户可以编辑公开文案，但不能加入 runtime 配置。
 
 模板：
 
 ```json
 {
-  "schemaVersion": 1,
-  "provider": {
-    "name": "acme-weather",
-    "title": "Acme Weather API",
-    "subtitle": "City-level current weather",
-    "description": "Current weather API",
-    "useCase": "Use for city-level weather lookup.",
-    "i18n": {
-      "zh-CN": {
-        "title": "天气 API",
-        "subtitle": "城市级实时天气",
-        "description": "提供实时天气数据的 API。",
-        "useCase": "适合查询城市当前天气。"
-      }
-    },
-    "category": "data",
-    "version": "v1",
-    "logo": "https://example.com/logos/acme-weather.png",
-    "tags": ["weather", "data"],
-    "chains": ["tron:mainnet"],
-    "isFirstParty": false,
-    "isFeatured": false,
-    "featuredTags": [],
-    "serviceUrl": "https://gateway.acme-weather.com/providers/acme-weather"
+  "version": 1,
+  "fqn": "acme-weather",
+  "title": "Acme Weather API",
+  "subtitle": "City-level current weather",
+  "description": "Current weather API",
+  "useCase": "Use for city-level weather lookup.",
+  "i18n": {
+    "zh-CN": {
+      "title": "天气 API",
+      "subtitle": "城市级实时天气",
+      "description": "提供实时天气数据的 API。",
+      "useCase": "适合查询城市当前天气。"
+    }
   },
+  "logo": "https://example.com/logos/acme-weather.png",
+  "category": "data",
+  "chains": ["tron:mainnet"],
+  "isFirstParty": false,
+  "isFeatured": false,
+  "featuredTags": ["weather", "data"],
+  "serviceUrl": "https://gateway.acme-weather.com/providers/acme-weather",
   "endpoints": [
     {
       "method": "GET",
       "path": "/v1/current",
       "url": "https://gateway.acme-weather.com/providers/acme-weather/v1/current",
+      "title": "Current Weather",
+      "subtitle": "Lookup by city",
       "description": "Current weather for a city",
+      "useCase": "Use when an app needs real-time city weather.",
       "i18n": {
         "zh-CN": {
-          "description": "查询指定城市的当前天气。"
+          "title": "实时天气",
+          "subtitle": "按城市查询",
+          "description": "查询指定城市的当前天气。",
+          "useCase": "适合应用需要实时城市天气时使用。"
         }
       },
       "metered": true,
-      "priceUsd": 0.002
+      "minPriceUsd": 0.002,
+      "maxPriceUsd": 0.002
     }
   ],
-  "payment": {
-    "networks": ["tron:mainnet"],
-    "schemes": ["exact_permit"],
-    "currencies": ["USDT", "USDD"],
-    "validForSeconds": 300
+  "status": {
+    "catalog": "draft",
+    "gateway": "unknown",
+    "payment": "unknown",
+    "upstream": "unknown"
   }
 }
 ```
 
 ### 导出目录结构
 
-`x402-cli gateway export-catalog` 生成一个可提交目录：
+`x402-cli catalog export-gateway` 生成一个可提交目录：
 
 ```text
-catalog-entry/
+providers/acme-weather/
   pay.md
   catalog.json
-  assets/
-    logo.png
-  report.json
 ```
 
-`report.json` 是本地导出校验报告，不一定提交 PR：
+后续可以扩展 `report.json` 作为本地导出校验报告，但一期 PR 只提交 `pay.md` 和 `catalog.json`：
 
 ```json
 {
@@ -567,55 +567,48 @@ catalog-entry/
 推荐命令：
 
 ```bash
-x402-cli gateway export-catalog \
-  --gateway-url https://gateway.acme-weather.com/providers/acme-weather \
-  --fqn acme-weather \
-  --out ./catalog-entry
+x402-cli catalog export-gateway https://gateway.acme-weather.com \
+  --provider acme-weather \
+  --output-dir providers/acme-weather
 ```
 
 导出流程：
 
 ```text
-读取用户本地 Gateway runtime config
-只提取公开字段
-探测 Gateway URL 是否返回 402
+读取用户自托管 Gateway 的 /__402/catalog/providers/{fqn}.json
+只提取公开字段并规范化成 catalog.json
 生成 catalog.json
 生成 pay.md
-生成 report.json
 运行 secret scan
 ```
 
-导出命令可以读取用户本地 runtime config，但输出目录不能包含任何 secret。
+导出命令不读取用户本地 runtime config；runtime config 留在 Gateway 侧，输出目录不能包含任何 secret。
 
 `catalog.json` 示例：
 
 ```json
 {
-  "schemaVersion": 1,
-  "provider": {
-    "name": "acme-weather",
-    "title": "Acme Weather API",
-    "subtitle": "City-level current weather",
-    "description": "Current weather API",
-    "useCase": "Use for city-level weather lookup.",
-    "i18n": {
-      "zh-CN": {
-        "title": "天气 API",
-        "subtitle": "城市级实时天气",
-        "description": "提供实时天气数据的 API。",
-        "useCase": "适合查询城市当前天气。"
-      }
-    },
-    "category": "data",
-    "version": "v1",
-    "logo": "https://example.com/logos/acme-weather.png",
-    "tags": ["weather", "data"],
-    "chains": ["tron:mainnet"],
-    "isFirstParty": false,
-    "isFeatured": true,
-    "featuredTags": ["weather", "data"],
-    "serviceUrl": "https://gateway.acme-weather.com/providers/acme-weather"
+  "version": 1,
+  "fqn": "acme-weather",
+  "title": "Acme Weather API",
+  "subtitle": "City-level current weather",
+  "description": "Current weather API",
+  "useCase": "Use for city-level weather lookup.",
+  "i18n": {
+    "zh-CN": {
+      "title": "天气 API",
+      "subtitle": "城市级实时天气",
+      "description": "提供实时天气数据的 API。",
+      "useCase": "适合查询城市当前天气。"
+    }
   },
+  "logo": "https://example.com/logos/acme-weather.png",
+  "category": "data",
+  "chains": ["tron:mainnet"],
+  "isFirstParty": false,
+  "isFeatured": true,
+  "featuredTags": ["weather", "data"],
+  "serviceUrl": "https://gateway.acme-weather.com/providers/acme-weather",
   "endpoints": [
     {
       "method": "GET",
