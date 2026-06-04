@@ -16,6 +16,7 @@ from bankofai.x402_gateway.catalog.generate import (
     generate_listing_text,
     is_skills_ready,
 )
+from bankofai.x402_gateway.catalog.pay_assets import write_pay_assets
 from bankofai.x402_gateway.catalog.scaffold import (
     scaffold_listing,
     scaffold_listing_with_fetch,
@@ -96,6 +97,38 @@ def scaffold(
             )
         )
     typer.echo(str(path))
+
+
+@app.command("pay-assets")
+def pay_assets(
+    provider_yml: Path = typer.Argument(..., help="provider.yml to render."),
+    output_dir: Optional[Path] = typer.Option(
+        None,
+        "--output-dir",
+        help="Directory for pay.md and pay.json (defaults to <provider.yml dir>).",
+    ),
+    gateway_base: Optional[str] = typer.Option(
+        None,
+        "--gateway-base",
+        help="Fallback public gateway base when display.service_url is omitted.",
+    ),
+    overwrite: bool = typer.Option(True, "--overwrite/--no-overwrite"),
+) -> None:
+    """Render pay.md and pay.json from provider.yml."""
+    spec = load_provider_file(provider_yml)
+    target_dir = output_dir if output_dir is not None else provider_yml.parent
+    try:
+        md_path, json_path = write_pay_assets(
+            spec,
+            target_dir,
+            fallback_gateway_base=gateway_base,
+            overwrite=overwrite,
+        )
+    except FileExistsError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(str(md_path))
+    typer.echo(str(json_path))
 
 
 @app.command()

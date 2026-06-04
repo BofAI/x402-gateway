@@ -7,6 +7,7 @@ import base64
 import json
 
 import httpx
+import pytest
 from bankofai.x402.encoding import encode_payment_payload
 from bankofai.x402.types import (
     PaymentPayload,
@@ -76,6 +77,7 @@ def _build_test_client(
     facilitator: FacilitatorAPI | None = None,
     *,
     transport: httpx.MockTransport | None = None,
+    monkeypatch: pytest.MonkeyPatch | None = None,
 ) -> tuple[TestClient, ProviderRegistry, _FakeFacilitator]:
     registry = ProviderRegistry()
     app = create_app(registry)
@@ -90,6 +92,7 @@ def _build_test_client(
     _patch_provider_facilitator(registry, "acme-weather", fac)
 
     if transport is not None:
+        assert monkeypatch is not None
         # monkey-patch httpx.AsyncClient default to inject the upstream mock
         original_init = httpx.AsyncClient.__init__
 
@@ -97,7 +100,7 @@ def _build_test_client(
             kwargs.setdefault("transport", transport)
             return original_init(self, *args, **kwargs)
 
-        httpx.AsyncClient.__init__ = patched_init  # type: ignore[assignment]
+        monkeypatch.setattr(httpx.AsyncClient, "__init__", patched_init)
 
     return TestClient(app), registry, fac  # type: ignore[return-value]
 
@@ -113,6 +116,29 @@ def test_management_endpoints(provider_yml_path) -> None:
         assert endpoints[0]["gatewayPath"] == "/providers/acme-weather/v1/current"
         assert endpoints[0]["metered"] is True
         assert endpoints[1]["metered"] is False
+    finally:
+        client.close()
+
+
+def test_catalog_endpoints_expose_public_payloads(provider_yml_path) -> None:
+    client, _, _ = _build_test_client(provider_yml_path)
+    try:
+        catalog = client.get("/__402/catalog").json()
+        assert catalog["provider_count"] == 1
+        assert catalog["providers"][0]["fqn"] == "acme-weather"
+        assert "routing" not in catalog["providers"][0]
+
+        detail = client.get("/__402/catalog/providers/acme-weather.json").json()
+        assert detail["service_url"].endswith("/providers/acme-weather")
+        assert detail["endpoints"][0]["url"].endswith(
+            "/providers/acme-weather/v1/current"
+        )
+        assert detail["status"]["gateway"] == "loaded"
+
+        pay = client.get("/__402/catalog/pay/acme-weather.json").json()
+        assert pay["provider"]["name"] == "acme-weather"
+        assert pay["paidEndpoints"][0]["path"] == "/v1/current"
+        assert "routing" not in pay
     finally:
         client.close()
 
@@ -144,7 +170,9 @@ def test_unknown_path_returns_404(provider_yml_path) -> None:
         client.close()
 
 
-def test_free_endpoint_proxies_upstream(provider_yml_path) -> None:
+def test_free_endpoint_proxies_upstream(
+    provider_yml_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Hit the /health endpoint: no metering, should forward to upstream."""
 
     def upstream_handler(request: httpx.Request) -> httpx.Response:
@@ -152,20 +180,20 @@ def test_free_endpoint_proxies_upstream(provider_yml_path) -> None:
         return httpx.Response(200, json={"healthy": True})
 
     transport = httpx.MockTransport(upstream_handler)
-    client, _, _ = _build_test_client(provider_yml_path, transport=transport)
+    client, _, _ = _build_test_client(
+        provider_yml_path, transport=transport, monkeypatch=monkeypatch
+    )
     try:
         response = client.get("/providers/acme-weather/health")
         assert response.status_code == 200
         assert response.json() == {"healthy": True}
     finally:
         client.close()
-        # restore httpx.AsyncClient.__init__
-        import importlib
-
-        importlib.reload(httpx)
 
 
-def test_metered_endpoint_settles_and_forwards(provider_yml_path) -> None:
+def test_metered_endpoint_settles_and_forwards(
+    provider_yml_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Send a valid PAYMENT-SIGNATURE -> facilitator verify+settle -> upstream call."""
 
     upstream_calls: list[httpx.Request] = []
@@ -177,7 +205,10 @@ def test_metered_endpoint_settles_and_forwards(provider_yml_path) -> None:
     transport = httpx.MockTransport(upstream_handler)
     facilitator = _FakeFacilitator()
     client, _, fac = _build_test_client(
-        provider_yml_path, facilitator=facilitator, transport=transport
+        provider_yml_path,
+        facilitator=facilitator,
+        transport=transport,
+        monkeypatch=monkeypatch,
     )
 
     try:
@@ -210,7 +241,9 @@ def test_metered_endpoint_settles_and_forwards(provider_yml_path) -> None:
         client.close()
 
 
-def test_metered_endpoint_400s_when_verify_fails(provider_yml_path) -> None:
+def test_metered_endpoint_400s_when_verify_fails(
+    provider_yml_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     facilitator = _FakeFacilitator(verify_result=False)
 
     upstream_calls: list[httpx.Request] = []
@@ -221,7 +254,10 @@ def test_metered_endpoint_400s_when_verify_fails(provider_yml_path) -> None:
 
     transport = httpx.MockTransport(upstream_handler)
     client, _, fac = _build_test_client(
-        provider_yml_path, facilitator=facilitator, transport=transport
+        provider_yml_path,
+        facilitator=facilitator,
+        transport=transport,
+        monkeypatch=monkeypatch,
     )
 
     try:

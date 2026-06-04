@@ -23,9 +23,9 @@ import pytest
 import uvicorn
 from fastapi import FastAPI, Request
 
-REPO_ROOT = Path(__file__).resolve().parents[3].parent
+REPO_ROOT = Path(__file__).resolve().parents[3]
 # Make `e2e.mock_facilitator.app` importable without installing it.
-sys.path.insert(0, str(REPO_ROOT / "e2e"))
+sys.path.insert(0, str(REPO_ROOT / "x402" / "e2e"))
 
 
 def _free_port() -> int:

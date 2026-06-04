@@ -40,6 +40,9 @@ Responsibilities:
 - build provider detail JSON files under `dist/providers/`
 - search local provider metadata
 
+长期的 Catalog Server、Git 同步、PR 校验、CLI、前端和 Agent 搜索联动方案见
+[docs/catalog-server-design.md](docs/catalog-server-design.md)。
+
 ### Local Facilitator
 
 The Docker Compose development stack includes a mock facilitator. It supports `/supported`, `/verify`, `/settle`, and control endpoints for debugging. This is a development dependency only. Production should point `X402_FACILITATOR_URL` at the official facilitator.

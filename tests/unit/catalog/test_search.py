@@ -4,7 +4,6 @@ from pathlib import Path
 
 from bankofai.x402_gateway.catalog.search import search_catalog
 
-
 LISTING = """\
 ---
 name: weather

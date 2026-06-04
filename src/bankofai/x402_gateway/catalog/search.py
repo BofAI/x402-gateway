@@ -147,15 +147,15 @@ FIELD_WEIGHTS = {
 def _score(query_terms: list[str], fields: dict[str, list[str]]) -> tuple[int, list[str]]:
     score = 0
     matched: list[str] = []
-    for field, values in fields.items():
+    for field_name, values in fields.items():
         haystack = " ".join(str(value) for value in values).lower()
         if not haystack:
             continue
         count = sum(1 for term in query_terms if term in haystack)
         if count == 0:
             continue
-        score += FIELD_WEIGHTS.get(field, 1) * count
-        matched.append(field)
+        score += FIELD_WEIGHTS.get(field_name, 1) * count
+        matched.append(field_name)
     return score, matched
 
 

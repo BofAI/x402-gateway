@@ -19,7 +19,7 @@ def test_load_provider_file_normalizes_network(provider_yml_path: Path) -> None:
     assert spec.operator.network == "tron:mainnet"
     assert spec.endpoints[0].method == "GET"
     # forward_url shorthand should populate routing.url
-    assert spec.routing.url == "https://internal.acme.example"
+    assert spec.routing.url == "http://upstream:8080"
 
 
 def test_expandvars_strict_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:

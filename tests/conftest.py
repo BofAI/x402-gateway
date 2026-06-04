@@ -10,6 +10,13 @@ REPO_PYTHON = Path(__file__).resolve().parents[1]
 EXAMPLES_DIR = REPO_PYTHON / "examples"
 
 
+@pytest.fixture(autouse=True)
+def _provider_env_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("X402_GATEWAY_PUBLIC_BASE_URL", "https://gateway.example.com")
+    monkeypatch.setenv("X402_FACILITATOR_URL", "https://facilitator.example.com")
+    monkeypatch.setenv("ACME_API_TOKEN", "test-upstream-token")
+
+
 @pytest.fixture
 def examples_dir() -> Path:
     return EXAMPLES_DIR

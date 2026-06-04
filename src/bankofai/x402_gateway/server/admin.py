@@ -10,7 +10,9 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from bankofai.x402_gateway.server.metering import endpoint_price_options
+from bankofai.x402_gateway.catalog.pay_assets import generate_pay_json
+from bankofai.x402_gateway.config.spec import EndpointSpec, ProviderSpec
+from bankofai.x402_gateway.server.metering import endpoint_price_options, endpoint_price_usd
 from bankofai.x402_gateway.server.payment import verify_payment_header
 from bankofai.x402_gateway.server.registry import ProviderRegistry
 
@@ -84,6 +86,167 @@ async def endpoints(request: Request) -> list[dict[str, Any]]:
                 }
             )
     return result
+
+
+def _gateway_base(request: Request) -> str:
+    configured = getattr(request.app.state, "public_base_url", None)
+    if isinstance(configured, str) and configured:
+        return configured.rstrip("/")
+    return f"{request.url.scheme}://{request.url.netloc}".rstrip("/")
+
+
+def _provider_service_url(spec: ProviderSpec, request: Request) -> str:
+    if spec.display.service_url:
+        return spec.display.service_url.rstrip("/")
+    return f"{_gateway_base(request)}/providers/{spec.name}"
+
+
+def _endpoint_public_payload(
+    spec: ProviderSpec,
+    endpoint: EndpointSpec,
+    *,
+    service_url: str,
+) -> dict[str, Any]:
+    price = endpoint_price_usd(endpoint)
+    return {
+        "method": endpoint.method,
+        "path": endpoint.path,
+        "url": f"{service_url}{endpoint.path}",
+        "title": endpoint.description or endpoint.path,
+        "subtitle": endpoint.path,
+        "description": endpoint.description or spec.description,
+        "use_case": spec.discovery.use_case or spec.description,
+        "i18n": {},
+        "metered": endpoint.metering is not None,
+        "min_price_usd": price,
+        "max_price_usd": price,
+    }
+
+
+def _provider_catalog_detail(
+    spec: ProviderSpec,
+    request: Request,
+    *,
+    status: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    service_url = _provider_service_url(spec, request)
+    endpoints_payload = [
+        _endpoint_public_payload(spec, endpoint, service_url=service_url)
+        for endpoint in spec.endpoints
+    ]
+    prices = [
+        price
+        for endpoint in endpoints_payload
+        for price in (endpoint["min_price_usd"], endpoint["max_price_usd"])
+    ] or [0.0]
+    chains = [spec.operator.network]
+    return {
+        "fqn": spec.name,
+        "title": spec.title,
+        "subtitle": spec.discovery.use_case or spec.description,
+        "description": spec.description,
+        "use_case": spec.discovery.use_case or spec.description,
+        "i18n": {},
+        "logo": spec.display.logo,
+        "category": spec.category,
+        "chains": chains,
+        "is_first_party": False,
+        "is_featured": False,
+        "featured_tags": spec.display.tags,
+        "service_url": service_url,
+        "endpoint_count": len(spec.endpoints),
+        "has_metering": any(endpoint.metering is not None for endpoint in spec.endpoints),
+        "has_free_tier": any(endpoint["min_price_usd"] == 0 for endpoint in endpoints_payload),
+        "min_price_usd": min(prices),
+        "max_price_usd": max(prices),
+        "sha": None,
+        "endpoints": endpoints_payload,
+        "status": status
+        or {
+            "catalog": "local",
+            "gateway": "loaded",
+            "payment": "unknown",
+            "upstream": "unknown",
+        },
+    }
+
+
+@router.get("/catalog")
+async def catalog(request: Request) -> dict[str, Any]:
+    registry = get_registry(request)
+    states = registry.state_snapshot()
+    providers_payload = []
+    chains: set[str] = set()
+    categories: dict[str, int] = {}
+    for name, spec in registry.snapshot().items():
+        state = states.get(name)
+        detail = _provider_catalog_detail(
+            spec,
+            request,
+            status={
+                "catalog": "local",
+                "gateway": state.config_status if state else "unknown",
+                "payment": state.payment_status if state else "unknown",
+                "upstream": state.upstream_status if state else "unknown",
+            },
+        )
+        providers_payload.append(
+            {
+                key: value
+                for key, value in detail.items()
+                if key not in {"endpoints", "status"}
+            }
+        )
+        categories[spec.category] = categories.get(spec.category, 0) + 1
+        chains.update(detail["chains"])
+
+    providers_payload.sort(key=lambda item: item["fqn"])
+    return {
+        "version": 1,
+        "generated_at": None,
+        "provider_count": len(providers_payload),
+        "first_party_count": 0,
+        "chain_count": len(chains),
+        "base_url": f"{_gateway_base(request)}/__402/catalog",
+        "frontend": {
+            "featured_fqns": [],
+            "categories": [
+                {"id": category, "count": count}
+                for category, count in sorted(categories.items())
+            ],
+            "chains": [{"id": chain, "count": 1} for chain in sorted(chains)],
+        },
+        "providers": providers_payload,
+    }
+
+
+@router.get("/catalog/providers/{provider_name}.json")
+async def catalog_provider(provider_name: str, request: Request) -> dict[str, Any]:
+    registry = get_registry(request)
+    spec = registry.get(provider_name)
+    if spec is None:
+        raise HTTPException(status_code=404, detail="provider not found")
+    state = registry.state_snapshot().get(provider_name)
+    return _provider_catalog_detail(
+        spec,
+        request,
+        status={
+            "catalog": "local",
+            "gateway": state.config_status if state else "unknown",
+            "payment": state.payment_status if state else "unknown",
+            "upstream": state.upstream_status if state else "unknown",
+        },
+    )
+
+
+@router.get("/catalog/pay/{provider_name}.json")
+async def catalog_pay(provider_name: str, request: Request) -> dict[str, Any]:
+    registry = get_registry(request)
+    spec = registry.get(provider_name)
+    if spec is None:
+        raise HTTPException(status_code=404, detail="provider not found")
+    gateway_base = _gateway_base(request)
+    return generate_pay_json(spec, fallback_gateway_base=gateway_base)
 
 
 @router.post("/verify")

@@ -188,6 +188,7 @@ x402-gateway server scaffold acme-weather
 
 x402-gateway catalog scaffold acme-weather https://api.example.com/openapi.json
 x402-gateway catalog generate providers/acme-weather/provider.yml
+x402-gateway catalog pay-assets providers/acme-weather/provider.yml
 x402-gateway catalog check providers
 x402-gateway catalog build providers --dist-dir dist
 x402-gateway catalog search providers weather
