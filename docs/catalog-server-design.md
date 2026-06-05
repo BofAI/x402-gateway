@@ -2078,15 +2078,17 @@ MVP 不需要：
 
 交付：
 
-- `x402-cli gateway export-catalog`
-- `x402-cli catalog validate`
-- `x402-cli catalog submit`
+- `x402-cli catalog export-gateway`
 - `x402-cli catalog update`
 - `x402-cli catalog search`
 - `x402-cli catalog show`
 - `x402-cli catalog endpoints`
 - `x402-cli catalog pay-json`
-- `x402-cli curl`
+- `x402-cli pay`
+- `x402-cli gateway check`
+- `x402-cli gateway start`
+- `x402-cli gateway catalog check`
+- `x402-cli gateway catalog build`
 
 验收：
 

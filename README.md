@@ -2,6 +2,10 @@
 
 `x402-gateway` is a YAML-driven payment gateway for provider APIs. It runs in front of normal HTTP APIs, returns x402 `402 Payment Required` challenges for paid endpoints, verifies and settles payments through a facilitator, then forwards the request to the upstream API.
 
+For community users, the main entrypoint is `x402-cli`. Gateway commands are exposed as `x402-cli gateway ...`; the `x402-gateway` package remains the underlying runtime and compatibility entrypoint.
+
+Provider copy-paste examples live in [`examples/README.md`](examples/README.md).
+
 The gateway is now ready for the debugging stage. The basic development target for `0.6.1` is in place: provider files are persisted in this repository, the runtime loads multiple providers from `providers/`, the catalog can be built and searched, and Docker Compose starts a local gateway plus a local mock facilitator.
 
 ## Current Features
@@ -93,14 +97,14 @@ Validate a provider:
 
 ```bash
 X402_FACILITATOR_URL=http://127.0.0.1:4021 \
-  x402-gateway server check providers/acme-weather/provider.yml
+  x402-cli gateway check providers/acme-weather/provider.yml
 ```
 
 Start from local Python instead of Docker:
 
 ```bash
 X402_FACILITATOR_URL=http://127.0.0.1:4021 \
-  x402-gateway server start --providers-dir providers --host 0.0.0.0 --port 4020
+  x402-cli gateway start --providers-dir providers --host 0.0.0.0 --port 4020
 ```
 
 Buyer or agent request path:
@@ -145,7 +149,7 @@ dist/providers/<provider>.json
 Search the local catalog:
 
 ```bash
-x402-gateway catalog search providers weather
+x402-cli gateway catalog search providers weather
 ```
 
 The same `dist/skills.json` can be consumed by `x402-cli gateway search`.
@@ -203,16 +207,16 @@ The implementation is ready for debugging. The remaining work is validation, not
 ## Useful Commands
 
 ```bash
-x402-gateway server start --providers-dir providers
-x402-gateway server check providers/acme-weather/provider.yml
-x402-gateway server scaffold acme-weather
+x402-cli gateway start --providers-dir providers
+x402-cli gateway check providers/acme-weather/provider.yml
+x402-cli gateway scaffold acme-weather --output-dir providers/acme-weather
 
-x402-gateway catalog scaffold acme-weather https://api.example.com/openapi.json
-x402-gateway catalog generate providers/acme-weather/provider.yml
-x402-gateway catalog pay-assets providers/acme-weather/provider.yml
-x402-gateway catalog check providers
-x402-gateway catalog build providers --dist-dir dist
-x402-gateway catalog search providers weather
+x402-cli gateway catalog scaffold acme-weather https://api.example.com/openapi.json
+x402-cli gateway catalog generate providers/acme-weather/provider.yml
+x402-cli gateway catalog pay-assets providers/acme-weather/provider.yml
+x402-cli gateway catalog check providers
+x402-cli gateway catalog build providers --dist-dir dist
+x402-cli gateway catalog search providers weather
 x402-cli catalog export-gateway http://127.0.0.1:4020 --provider acme-weather
 
 docker compose up --build -d gateway
