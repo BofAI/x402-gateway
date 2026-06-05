@@ -139,6 +139,29 @@ Build static catalog artifacts:
 docker compose --profile tools run --rm catalog-build
 ```
 
+## Container Startup
+
+Build and start the local demo stack:
+
+```bash
+cp .env.example .env
+docker compose build gateway upstream facilitator
+docker compose up -d gateway
+```
+
+Check runtime state:
+
+```bash
+docker compose ps
+curl http://127.0.0.1:4020/__402/health
+curl http://127.0.0.1:4020/__402/providers
+curl http://127.0.0.1:4020/__402/endpoints
+curl -i 'http://127.0.0.1:4020/providers/acme-weather/v1/current?city=Singapore'
+```
+
+The paid endpoint should return `402 Payment Required` until called through
+`x402-cli pay` with a configured wallet.
+
 Output:
 
 ```text
