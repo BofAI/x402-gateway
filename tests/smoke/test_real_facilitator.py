@@ -12,15 +12,18 @@ And drives a real `bankofai-x402` client signature through the full pipeline.
 It is **opt-in**: skipped automatically unless
 
   X402_LIVE_FACILITATOR=1
+  X402_GATEWAY_DEMO_DIR=/path/to/x402-demo
 
-is set. Set it together with a populated `x402-demo/.env`. On BSC testnet the
-settle path needs a funded `BSC_FACILITATOR_PRIVATE_KEY` wallet (test BNB) and
-a funded `BSC_CLIENT_PRIVATE_KEY` wallet with USDT.
+are set. Set them together with a populated `$X402_GATEWAY_DEMO_DIR/.env`. On
+BSC testnet the settle path needs a funded `BSC_FACILITATOR_PRIVATE_KEY` wallet
+(test BNB) and a funded `BSC_CLIENT_PRIVATE_KEY` wallet with USDT.
 
 Running:
 
-    cd python/x402-gateway
-    X402_LIVE_FACILITATOR=1 .venv/bin/python -m pytest \\
+    cd x402-gateway
+    X402_LIVE_FACILITATOR=1 \\
+    X402_GATEWAY_DEMO_DIR=/path/to/x402-demo \\
+    .venv/bin/python -m pytest \\
         tests/smoke/test_real_facilitator.py -v -s
 
 The test asserts the gateway → facilitator → on-chain settle round trip
@@ -48,15 +51,19 @@ from bankofai.x402.signers.client import EvmClientSigner
 from eth_account import Account
 from eth_account.messages import encode_defunct, encode_typed_data
 
-DEMO_DIR = Path("/Users/bobo/code/x402/x402-demo")
+DEMO_DIR = Path(os.environ.get("X402_GATEWAY_DEMO_DIR", "")).expanduser()
 DEMO_ENV = DEMO_DIR / ".env"
 DEMO_FACILITATOR_MAIN = DEMO_DIR / "facilitator" / "main.py"
 MOCK_TX_HASH = "0x" + "11" * 32
 
 # Skip the whole module when not explicitly enabled.
 pytestmark = pytest.mark.skipif(
-    os.environ.get("X402_LIVE_FACILITATOR") != "1",
-    reason="set X402_LIVE_FACILITATOR=1 to enable the live-facilitator smoke",
+    os.environ.get("X402_LIVE_FACILITATOR") != "1"
+    or not os.environ.get("X402_GATEWAY_DEMO_DIR"),
+    reason=(
+        "set X402_LIVE_FACILITATOR=1 and X402_GATEWAY_DEMO_DIR=/path/to/x402-demo "
+        "to enable the live-facilitator smoke"
+    ),
 )
 
 
