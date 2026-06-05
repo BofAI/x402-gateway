@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bankofai-x402-gateway"
-version = "0.6.1.dev0"
+version = "0.6.1b0"
 description = "YAML-driven x402 payment gateway for provider APIs"
 readme = "README.md"
 license = {text = "MIT"}
