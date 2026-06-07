@@ -3,7 +3,8 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    HOME=/home/x402-gateway
 
 ARG X402_SDK_SPEC="bankofai-x402>=0.6.0"
 
@@ -22,8 +23,8 @@ RUN pip install --upgrade pip \
     && pip install .
 
 RUN useradd -r -u 1000 -g users -s /usr/sbin/nologin x402-gateway \
-    && mkdir -p /app/providers /app/dist \
-    && chown -R x402-gateway:users /app
+    && mkdir -p /app/providers /app/dist /home/x402-gateway \
+    && chown -R x402-gateway:users /app /home/x402-gateway
 
 COPY --chown=x402-gateway:users providers/ ./providers/
 

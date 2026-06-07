@@ -69,6 +69,9 @@ def test_payment_required_carries_v2_protocol() -> None:
     payment_required = build_payment_required(spec, spec.endpoints[0])
     assert payment_required.x402_version == 2
     assert payment_required.accepts[0].pay_to == "TAcmeRecipient"
+    assert payment_required.extensions is not None
+    assert payment_required.extensions.payment_permit_context is not None
+    assert payment_required.extensions.payment_permit_context.meta.kind == "PAYMENT_ONLY"
 
 
 def test_payment_required_header_round_trips() -> None:
@@ -79,6 +82,9 @@ def test_payment_required_header_round_trips() -> None:
     decoded_json = json.loads(base64.b64decode(header).decode())
     assert decoded_json["x402Version"] == 2
     assert decoded_json["accepts"][0]["network"] == "tron:mainnet"
+    assert decoded_json["extensions"]["paymentPermitContext"]["meta"]["paymentId"].startswith(
+        "0x"
+    )
 
 
 def test_match_requirement_finds_matching_block() -> None:

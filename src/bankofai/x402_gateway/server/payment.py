@@ -15,19 +15,26 @@ PaymentRequired uses x402Version=2 (Coinbase v2 wire format).
 from __future__ import annotations
 
 import logging
+import time
+import uuid
 from decimal import Decimal
 from typing import Optional
 
 from bankofai.x402.encoding import decode_payment_payload, encode_payment_payload
 from bankofai.x402.tokens import TokenRegistry
 from bankofai.x402.types import (
+    PAYMENT_ONLY,
     PaymentPayload,
+    PaymentPermitContext,
+    PaymentPermitContextMeta,
     PaymentRequired,
+    PaymentRequiredExtensions,
     PaymentRequirements,
     ResourceInfo,
     SettleResponse,
     VerifyResponse,
 )
+from bankofai.x402.utils import generate_payment_id
 from pydantic import ValidationError
 
 from bankofai.x402_gateway.config.spec import EndpointSpec, ProviderSpec
@@ -95,6 +102,7 @@ def build_payment_required(
     request_params: Optional[dict[str, str]] = None,
 ) -> PaymentRequired:
     _, requirements = build_payment_requirements(provider, endpoint, request_params=request_params)
+    now = int(time.time())
     return PaymentRequired(
         x402Version=2,
         error="Payment required",
@@ -103,6 +111,17 @@ def build_payment_required(
             description=endpoint.description or provider.description,
         ),
         accepts=requirements,
+        extensions=PaymentRequiredExtensions(
+            paymentPermitContext=PaymentPermitContext(
+                meta=PaymentPermitContextMeta(
+                    kind=PAYMENT_ONLY,
+                    paymentId=generate_payment_id(),
+                    nonce=str(uuid.uuid4().int),
+                    validAfter=now,
+                    validBefore=now + provider.operator.valid_for_seconds,
+                )
+            )
+        ),
     )
 
 
