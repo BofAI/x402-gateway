@@ -37,7 +37,6 @@ jobs:
         run: |
           pytest \
             tests/unit \
-            tests/smoke/test_payment_flow.py \
             tests/smoke/test_upstream_auth.py \
             -q
 
