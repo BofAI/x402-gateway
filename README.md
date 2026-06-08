@@ -5,6 +5,7 @@
 For community users, the main entrypoint is `x402-cli`. Gateway commands are exposed as `x402-cli gateway ...`; the `x402-gateway` package remains the underlying runtime and compatibility entrypoint.
 
 Provider copy-paste examples live in [`examples/README.md`](examples/README.md).
+Test environment deployment steps live in [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 The gateway is now ready for the debugging stage. The basic development target for `0.6.1` is in place: provider files are persisted in this repository, the runtime loads multiple providers from `providers/`, the catalog can be built and searched, and Docker Compose starts a local gateway plus a local mock facilitator.
 
