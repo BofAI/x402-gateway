@@ -19,7 +19,7 @@ from urllib.parse import urljoin
 
 import httpx
 from bankofai.x402.encoding import encode_payment_payload
-from bankofai.x402.types import PaymentRequired
+from bankofai.x402.types import PaymentRequired, PaymentRequirementsExtra
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.responses import Response as FastAPIResponse
@@ -108,6 +108,52 @@ def _payment_required_response(payment_required: PaymentRequired) -> JSONRespons
     return response
 
 
+async def _attach_fee_quotes(entry: ProviderEntry, payment_required: PaymentRequired) -> None:
+    """Attach facilitator fee quotes to PaymentRequirements before the client signs.
+
+    Real facilitators verify feeTo/feeAmount as part of exact_permit. Returning
+    a 402 without `accepts[].extra.fee` lets the client sign a zero-fee permit,
+    which the facilitator correctly rejects during verify.
+    """
+    if not payment_required.accepts:
+        return
+
+    context = None
+    if payment_required.extensions and payment_required.extensions.payment_permit_context:
+        context = payment_required.extensions.payment_permit_context.model_dump(
+            by_alias=True,
+            exclude_none=True,
+        )
+
+    try:
+        quotes = await entry.facilitator.fee_quote(payment_required.accepts, context)
+    except Exception as exc:
+        logger.warning("fee quote failed for provider %s: %s", entry.spec.name, exc)
+        return
+
+    quote_by_key = {
+        (quote.scheme, quote.network, quote.asset.lower()): quote
+        for quote in quotes
+    }
+    updated = []
+    for requirement in payment_required.accepts:
+        quote = quote_by_key.get(
+            (requirement.scheme, requirement.network, requirement.asset.lower())
+        )
+        if quote is None:
+            updated.append(requirement)
+            continue
+        extra = requirement.extra or PaymentRequirementsExtra()
+        updated.append(
+            requirement.model_copy(
+                update={
+                    "extra": extra.model_copy(update={"fee": quote.fee}),
+                }
+            )
+        )
+    payment_required.accepts = updated
+
+
 async def _forward_upstream(
     entry: ProviderEntry, request: Request, target_path: str, *, body: bytes | None = None
 ) -> tuple[int, dict[str, str], bytes, httpx.Headers]:
@@ -170,6 +216,7 @@ async def proxy(provider_name: str, path: str, request: Request) -> Response:
     payment_required = build_payment_required(
         entry.spec, endpoint, request_params=request_params
     )
+    await _attach_fee_quotes(entry, payment_required)
     if not payment_required.accepts:
         # metered but no currencies declared — treat as misconfiguration
         return JSONResponse(

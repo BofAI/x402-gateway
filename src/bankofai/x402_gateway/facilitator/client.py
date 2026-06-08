@@ -11,10 +11,11 @@ Thin wrapper around `bankofai.x402.facilitator.FacilitatorClient` that adds:
 from __future__ import annotations
 
 import logging
-from typing import Optional, Protocol
+from typing import Any, Optional, Protocol
 
 from bankofai.x402.facilitator.facilitator_client import FacilitatorClient
 from bankofai.x402.types import (
+    FeeQuoteResponse,
     PaymentPayload,
     PaymentRequirements,
     SettleResponse,
@@ -29,6 +30,12 @@ class FacilitatorAPI(Protocol):
     """Subset of FacilitatorClient the gateway depends on."""
 
     async def supported(self) -> SupportedResponse: ...
+
+    async def fee_quote(
+        self,
+        accepts: list[PaymentRequirements],
+        context: dict[str, Any] | None = None,
+    ) -> list[FeeQuoteResponse]: ...
 
     async def verify(
         self, payload: PaymentPayload, requirements: PaymentRequirements
@@ -49,6 +56,13 @@ class StubFacilitator:
 
     async def supported(self) -> SupportedResponse:
         return SupportedResponse(kinds=[])
+
+    async def fee_quote(
+        self,
+        accepts: list[PaymentRequirements],
+        context: dict[str, Any] | None = None,
+    ) -> list[FeeQuoteResponse]:
+        return []
 
     async def verify(
         self, payload: PaymentPayload, requirements: PaymentRequirements

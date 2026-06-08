@@ -10,6 +10,8 @@ import httpx
 import pytest
 from bankofai.x402.encoding import encode_payment_payload
 from bankofai.x402.types import (
+    FeeInfo,
+    FeeQuoteResponse,
     PaymentPayload,
     PaymentPayloadData,
     SettleResponse,
@@ -39,15 +41,39 @@ class _FakeFacilitator:
         verify_result: bool = True,
         settle_result: bool = True,
         tx_hash: str = "0xdeadbeef",
+        fee_to: str | None = None,
+        fee_amount: str = "0",
     ) -> None:
+        self.fee_quote_calls: list = []
         self.verify_calls: list = []
         self.settle_calls: list = []
         self._verify_result = verify_result
         self._settle_result = settle_result
         self._tx_hash = tx_hash
+        self._fee_to = fee_to
+        self._fee_amount = fee_amount
 
     async def supported(self) -> SupportedResponse:
         return SupportedResponse(kinds=[])
+
+    async def fee_quote(self, accepts, context=None) -> list[FeeQuoteResponse]:
+        self.fee_quote_calls.append((accepts, context))
+        if self._fee_to is None:
+            return []
+        requirement = accepts[0]
+        return [
+            FeeQuoteResponse(
+                scheme=requirement.scheme,
+                network=requirement.network,
+                asset=requirement.asset,
+                pricing="fixed",
+                fee=FeeInfo(
+                    feeTo=self._fee_to,
+                    feeAmount=self._fee_amount,
+                    caller=self._fee_to,
+                ),
+            )
+        ]
 
     async def verify(self, payload, requirements) -> VerifyResponse:
         self.verify_calls.append((payload, requirements))
@@ -156,6 +182,27 @@ def test_metered_endpoint_returns_402_when_unpaid(provider_yml_path) -> None:
         assert header is not None
         decoded = json.loads(base64.b64decode(header).decode())
         assert decoded["x402Version"] == 2
+    finally:
+        client.close()
+
+
+def test_metered_endpoint_attaches_facilitator_fee_quote(provider_yml_path) -> None:
+    facilitator = _FakeFacilitator(fee_to="TFeeCollector", fee_amount="123")
+    client, _, fac = _build_test_client(provider_yml_path, facilitator=facilitator)
+    try:
+        response = client.get("/providers/acme-weather/v1/current")
+        assert response.status_code == 402
+        assert len(fac.fee_quote_calls) == 1
+
+        body = response.json()
+        fee = body["accepts"][0]["extra"]["fee"]
+        assert fee["feeTo"] == "TFeeCollector"
+        assert fee["feeAmount"] == "123"
+
+        header = response.headers.get(PAYMENT_REQUIRED_HEADER)
+        assert header is not None
+        decoded = json.loads(base64.b64decode(header).decode())
+        assert decoded["accepts"][0]["extra"]["fee"]["feeTo"] == "TFeeCollector"
     finally:
         client.close()
 
