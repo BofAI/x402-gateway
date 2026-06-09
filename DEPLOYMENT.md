@@ -62,6 +62,20 @@ docker compose pull gateway
 docker compose up -d --no-build gateway
 ```
 
+镜像发布规则和 `x402-facilitator` 保持一致：
+
+```text
+Git tag: test-v* -> Docker image: bankofai/x402-gateway:test
+Git tag: v*      -> Docker image: bankofai/x402-gateway:<tag>
+```
+
+GitHub Actions 需要在本仓库配置以下 secrets：
+
+```text
+DOCKERHUB_USERNAME
+DOCKERHUB_TOKEN
+```
+
 默认端口映射：
 
 ```text
