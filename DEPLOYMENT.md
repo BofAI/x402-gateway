@@ -54,6 +54,21 @@ docker compose build gateway upstream facilitator
 docker compose up -d gateway
 ```
 
+日志路径：
+
+```text
+gateway 容器内：/app/log/gateway.log
+mock facilitator 容器内：/app/log/mock-facilitator.log
+宿主机：./log/
+```
+
+查看日志：
+
+```bash
+docker compose logs -f gateway
+tail -f ./log/gateway.log
+```
+
 检查：
 
 ```bash
@@ -113,12 +128,13 @@ docker run -d \
   --env-file .env \
   -p 4020:4020 \
   -v "$(pwd)/providers:/app/providers:ro" \
+  -v "$(pwd)/log:/app/log" \
   x402-gateway:tn \
-  x402-gateway server start \
+  sh -c 'mkdir -p /app/log && x402-gateway server start \
     --providers-dir /app/providers \
     --host 0.0.0.0 \
     --port 4020 \
-    --quiet
+    --quiet 2>&1 | tee -a /app/log/gateway.log'
 ```
 
 检查：
@@ -127,6 +143,7 @@ docker run -d \
 curl -fsS http://127.0.0.1:4020/__402/health
 curl -fsS http://127.0.0.1:4020/__402/providers
 curl -fsS http://127.0.0.1:4020/__402/endpoints
+tail -n 20 ./log/gateway.log
 ```
 
 外部域名检查：

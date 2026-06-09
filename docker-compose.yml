@@ -34,9 +34,11 @@ services:
         required: false
     environment:
       MOCK_FACILITATOR_MODE: ${MOCK_FACILITATOR_MODE:-success}
-      MOCK_FACILITATOR_LOG: /tmp/x402-mock-facilitator.log
+      MOCK_FACILITATOR_LOG: /app/log/mock-facilitator.log
     ports:
       - "${MOCK_FACILITATOR_PORT:-4021}:4021"
+    volumes:
+      - ./log:/app/log
     healthcheck:
       test:
         - CMD-SHELL
@@ -70,18 +72,19 @@ services:
       - "${X402_GATEWAY_PORT:-4020}:${X402_GATEWAY_PORT:-4020}"
     volumes:
       - ./providers:${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}:ro
+      - ./log:/app/log
     command:
-      - x402-gateway
-      - server
-      - start
-      - --providers-dir
-      - ${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}
-      - --host
-      - 0.0.0.0
-      - --port
-      - ${X402_GATEWAY_PORT:-4020}
-      - --sandbox
-      - --quiet
+      - sh
+      - -c
+      - >
+        mkdir -p /app/log &&
+        x402-gateway server start
+        --providers-dir ${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}
+        --host 0.0.0.0
+        --port ${X402_GATEWAY_PORT:-4020}
+        --sandbox
+        --quiet
+        2>&1 | tee -a /app/log/gateway.log
     depends_on:
       upstream:
         condition: service_healthy
@@ -117,6 +120,7 @@ services:
     volumes:
       - ./providers:${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}:ro
       - ./dist:/app/dist
+      - ./log:/app/log
     command:
       - x402-gateway
       - catalog

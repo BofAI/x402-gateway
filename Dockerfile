@@ -23,7 +23,7 @@ RUN pip install --upgrade pip \
     && pip install .
 
 RUN useradd -r -u 1000 -g users -s /usr/sbin/nologin x402-gateway \
-    && mkdir -p /app/providers /app/dist /home/x402-gateway \
+    && mkdir -p /app/providers /app/dist /app/log /home/x402-gateway \
     && chown -R x402-gateway:users /app /home/x402-gateway
 
 COPY --chown=x402-gateway:users providers/ ./providers/
@@ -32,4 +32,4 @@ USER x402-gateway
 
 EXPOSE 4020
 
-CMD ["x402-gateway", "server", "start", "--providers-dir", "/app/providers", "--host", "0.0.0.0", "--port", "4020", "--quiet"]
+CMD ["sh", "-c", "mkdir -p /app/log && x402-gateway server start --providers-dir /app/providers --host 0.0.0.0 --port 4020 --quiet 2>&1 | tee -a /app/log/gateway.log"]
