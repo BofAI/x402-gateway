@@ -54,6 +54,12 @@ docker compose build gateway upstream facilitator
 docker compose up -d gateway
 ```
 
+默认端口映射：
+
+```text
+0.0.0.0:4020 -> container 8080
+```
+
 日志路径：
 
 ```text
@@ -126,14 +132,14 @@ docker run -d \
   --name x402-gateway-tn \
   --restart unless-stopped \
   --env-file .env \
-  -p 4020:4020 \
+  -p 4020:8080 \
   -v "$(pwd)/providers:/app/providers:ro" \
   -v "$(pwd)/log:/app/log" \
   x402-gateway:tn \
   sh -c 'mkdir -p /app/log && x402-gateway server start \
     --providers-dir /app/providers \
     --host 0.0.0.0 \
-    --port 4020 \
+    --port 8080 \
     --quiet 2>&1 | tee -a /app/log/gateway.log'
 ```
 

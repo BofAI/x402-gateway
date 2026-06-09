@@ -30,6 +30,6 @@ COPY --chown=x402-gateway:users providers/ ./providers/
 
 USER x402-gateway
 
-EXPOSE 4020
+EXPOSE 8080
 
-CMD ["sh", "-c", "mkdir -p /app/log && x402-gateway server start --providers-dir /app/providers --host 0.0.0.0 --port 4020 --quiet 2>&1 | tee -a /app/log/gateway.log"]
+CMD ["sh", "-c", "mkdir -p /app/log && x402-gateway server start --providers-dir /app/providers --host 0.0.0.0 --port 8080 --quiet 2>&1 | tee -a /app/log/gateway.log"]

@@ -63,13 +63,12 @@ services:
         required: false
     environment:
       X402_GATEWAY_PROVIDERS_DIR: ${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}
-      X402_GATEWAY_PORT: ${X402_GATEWAY_PORT:-4020}
       X402_GATEWAY_LOG_LEVEL: ${X402_GATEWAY_LOG_LEVEL:-info}
       X402_GATEWAY_PUBLIC_BASE_URL: ${X402_GATEWAY_PUBLIC_BASE_URL:-http://host.docker.internal:4020}
       X402_FACILITATOR_URL: ${X402_FACILITATOR_URL:-http://facilitator:4021}
       ACME_API_TOKEN: ${ACME_API_TOKEN:-demo-upstream-token}
     ports:
-      - "${X402_GATEWAY_PORT:-4020}:${X402_GATEWAY_PORT:-4020}"
+      - "${X402_GATEWAY_PORT:-4020}:8080"
     volumes:
       - ./providers:${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}:ro
       - ./log:/app/log
@@ -81,7 +80,7 @@ services:
         x402-gateway server start
         --providers-dir ${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}
         --host 0.0.0.0
-        --port ${X402_GATEWAY_PORT:-4020}
+        --port 8080
         --sandbox
         --quiet
         2>&1 | tee -a /app/log/gateway.log
@@ -94,9 +93,8 @@ services:
       test:
         - CMD-SHELL
         - >
-          python -c "import os, urllib.request;
-          port=os.environ.get('X402_GATEWAY_PORT','4020');
-          urllib.request.urlopen(f'http://127.0.0.1:{port}/__402/health', timeout=3).read()"
+          python -c "import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8080/__402/health', timeout=3).read()"
       interval: 30s
       timeout: 5s
       retries: 3
