@@ -4,8 +4,8 @@ description: "OpenAI-compatible LLM APIs provided by BANK OF AI."
 category: ai_ml
 version: v1
 
-forward_url: https://chat.ainft.com
-openapi_url: https://chat.ainft.com/v1/models
+forward_url: https://api.bankofai.io
+openapi_url: https://api.bankofai.io/v1/models
 
 display:
   service_url: ${X402_GATEWAY_PUBLIC_BASE_URL}/providers/bankofai-llm
@@ -13,7 +13,7 @@ display:
   tags: ["bankofai", "llm", "openai-compatible", "first-party"]
 
 discovery:
-  use_case: "Use for OpenAI-compatible model listing, chat completions, text completions, and embeddings."
+  use_case: "Use for model listing, OpenAI-compatible chat completions, and Claude-compatible messages."
   spend_aware_usage:
     - "Use /v1/models first to choose an available model before paid generation calls."
     - "Keep max_tokens and prompt size bounded because this provider is charged per request in the current exact scheme."
@@ -24,8 +24,7 @@ discovery:
   request_examples:
     - "GET /providers/bankofai-llm/v1/models"
     - "POST /providers/bankofai-llm/v1/chat/completions"
-    - "POST /providers/bankofai-llm/v1/completions"
-    - "POST /providers/bankofai-llm/v1/embeddings"
+    - "POST /providers/bankofai-llm/v1/messages"
 
 routing:
   type: proxy
@@ -68,8 +67,8 @@ endpoints:
             - price_usd: 0.01
 
   - method: POST
-    path: /v1/completions
-    description: "Create a text completion"
+    path: /v1/messages
+    description: "Create a Claude-compatible message"
     metering:
       dimensions:
         - direction: usage
@@ -77,14 +76,3 @@ endpoints:
           scale: 1
           tiers:
             - price_usd: 0.01
-
-  - method: POST
-    path: /v1/embeddings
-    description: "Create text embeddings"
-    metering:
-      dimensions:
-        - direction: usage
-          unit: requests
-          scale: 1
-          tiers:
-            - price_usd: 0.005
