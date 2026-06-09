@@ -1,0 +1,90 @@
+name: bankofai-llm
+title: "BANK OF AI LLM API"
+description: "OpenAI-compatible LLM APIs provided by BANK OF AI."
+category: ai_ml
+version: v1
+
+forward_url: https://chat.ainft.com
+openapi_url: https://chat.ainft.com/v1/models
+
+display:
+  service_url: ${X402_GATEWAY_PUBLIC_BASE_URL}/providers/bankofai-llm
+  logo: https://bankofai.io/favicon.ico
+  tags: ["bankofai", "llm", "openai-compatible", "first-party"]
+
+discovery:
+  use_case: "Use for OpenAI-compatible model listing, chat completions, text completions, and embeddings."
+  spend_aware_usage:
+    - "Use /v1/models first to choose an available model before paid generation calls."
+    - "Keep max_tokens and prompt size bounded because this provider is charged per request in the current exact scheme."
+  when_to_use:
+    - "Use when an app or agent needs BANK OF AI hosted LLM inference through an OpenAI-compatible API."
+  when_not_to_use:
+    - "Do not use for token-level billing until usage-based settlement is enabled."
+  request_examples:
+    - "GET /providers/bankofai-llm/v1/models"
+    - "POST /providers/bankofai-llm/v1/chat/completions"
+    - "POST /providers/bankofai-llm/v1/completions"
+    - "POST /providers/bankofai-llm/v1/embeddings"
+
+routing:
+  type: proxy
+  auth:
+    method: header
+    key: Authorization
+    prefix: "Bearer "
+    value_from_env: BANKOFAI_API_KEY
+
+operator:
+  network: bsc-testnet
+  currencies:
+    usd: ["USDT"]
+  recipient: "${X402_PROVIDER_RECIPIENT_BSC_TESTNET}"
+  scheme: exact_permit
+  facilitator_url: "${X402_FACILITATOR_URL}"
+  valid_for_seconds: 300
+
+endpoints:
+  - method: GET
+    path: /v1/models
+    description: "List available BANK OF AI LLM models"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.001
+
+  - method: POST
+    path: /v1/chat/completions
+    description: "Create a chat completion"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.01
+
+  - method: POST
+    path: /v1/completions
+    description: "Create a text completion"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.01
+
+  - method: POST
+    path: /v1/embeddings
+    description: "Create text embeddings"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.005

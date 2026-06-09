@@ -70,6 +70,7 @@ services:
       X402_PROVIDER_RECIPIENT_TRON: ${X402_PROVIDER_RECIPIENT_TRON:-TProviderWalletBase58}
       X402_PROVIDER_VENDOR_TRON: ${X402_PROVIDER_VENDOR_TRON:-TVendorWalletBase58}
       ACME_API_TOKEN: ${ACME_API_TOKEN:-demo-upstream-token}
+      BANKOFAI_API_KEY: ${BANKOFAI_API_KEY:-change-me}
     ports:
       - "${X402_GATEWAY_PORT:-4020}:8080"
     volumes:
