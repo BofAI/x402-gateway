@@ -57,7 +57,7 @@ docker compose up -d gateway
 也可以直接使用 CI 推送的 Gateway 镜像：
 
 ```bash
-export X402_GATEWAY_IMAGE=ghcr.io/bofai/x402-gateway:tn-test-20260609-bankofai-llm-api
+export X402_GATEWAY_IMAGE=ghcr.io/bofai/x402-gateway:tn-test-20260609-bankofai-llm-api-images
 docker compose pull gateway
 docker compose up -d --no-build gateway
 ```
