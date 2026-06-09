@@ -54,10 +54,10 @@ docker compose build gateway upstream facilitator
 docker compose up -d gateway
 ```
 
-也可以直接使用 CI 推送的 Gateway 镜像：
+也可以直接使用 CI 推送到 Docker Hub 的 Gateway 镜像。测试 tag `test-v*` 会发布为镜像 tag `test`：
 
 ```bash
-export X402_GATEWAY_IMAGE=ghcr.io/bofai/x402-gateway:tn-test-20260609-bankofai-llm-api-images
+export X402_GATEWAY_IMAGE=bankofai/x402-gateway:test
 docker compose pull gateway
 docker compose up -d --no-build gateway
 ```

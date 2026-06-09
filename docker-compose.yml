@@ -51,7 +51,7 @@ services:
       start_period: 10s
 
   gateway:
-    image: ${X402_GATEWAY_IMAGE:-ghcr.io/bofai/x402-gateway:feature-0.6.1-gateway-init}
+    image: ${X402_GATEWAY_IMAGE:-bankofai/x402-gateway:test}
     build:
       context: .
       dockerfile: Dockerfile
