@@ -7,7 +7,7 @@ For community users, the main entrypoint is `x402-cli`. Gateway commands are exp
 Provider copy-paste examples live in [`examples/README.md`](examples/README.md).
 Test environment deployment steps live in [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
-The gateway is now ready for the debugging stage. The basic development target for `0.6.1` is in place: provider files are persisted in this repository, the runtime loads multiple providers from `providers/`, the catalog can be built and searched, and Docker Compose starts a local gateway plus a local mock facilitator.
+The `0.6.1` beta service shape is in place: provider files are persisted in this repository, the runtime loads multiple providers from `providers/`, public catalog files can be exported for `x402-catelog`, and Docker Compose starts a local gateway plus a local mock facilitator.
 
 ## Current Features
 
@@ -22,11 +22,7 @@ The gateway is now ready for the debugging stage. The basic development target f
   - `/__402/providers`
   - `/__402/endpoints`
   - `/__402/verify`
-- Catalog tooling:
-  - `catalog generate`
-  - `catalog check`
-  - `catalog build`
-  - `catalog search`
+- Catalog tooling through `x402-cli gateway catalog ...`.
 - Docker support for the official gateway service shape.
 - Local mock facilitator support for development.
 
@@ -217,7 +213,7 @@ Operator
 
 At this stage, no database is required. Provider configuration, catalog metadata, prices, upstream URLs, and recipient addresses are persisted as files in this repository. Runtime state is rebuilt from files on startup.
 
-## Debugging Stage Checklist
+## Test Readiness Checklist
 
 The implementation is ready for debugging. The remaining work is validation, not core scaffolding:
 

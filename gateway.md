@@ -7,8 +7,8 @@ This document describes the implemented gateway shape for `0.6.1`.
 `x402-gateway` runs as a reverse proxy in front of provider APIs. It loads provider configuration from one file or from a provider directory:
 
 ```bash
-x402-gateway server start providers/acme-weather/provider.yml
-x402-gateway server start --providers-dir providers
+x402-cli gateway start providers/acme-weather/provider.yml
+x402-cli gateway start --providers-dir providers
 ```
 
 In directory mode, every `providers/**/provider.yml` file becomes one provider in the in-memory registry. Configuration is persisted as files. Runtime registry state is rebuilt on startup.
@@ -58,8 +58,8 @@ Environment variables can be used with `${VAR}` placeholders. Missing variables 
 The catalog turns provider files and `listing.md` metadata into static discovery artifacts:
 
 ```bash
-x402-gateway catalog build providers --dist-dir dist
-x402-gateway catalog search providers weather
+x402-cli gateway catalog build providers --dist-dir dist
+x402-cli gateway catalog search providers weather
 ```
 
 Generated artifacts:

@@ -158,7 +158,7 @@ docker run -d \
   -v "$(pwd)/providers:/app/providers:ro" \
   -v "$(pwd)/log:/app/log" \
   x402-gateway:tn \
-  sh -c 'mkdir -p /app/log && x402-gateway server start \
+  sh -c 'mkdir -p /app/log && x402-cli gateway start \
     --providers-dir /app/providers \
     --host 0.0.0.0 \
     --port 8080 \
