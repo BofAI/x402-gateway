@@ -1,5 +1,25 @@
 # x402-gateway
 
+## 中文说明
+
+`x402-gateway` 是服务方自托管的 x402 支付网关。它读取本地 `provider.yml`，在付费接口前返回 `402 Payment Required`，通过 facilitator 完成支付校验和结算，然后把请求转发到真实上游 API。
+
+社区用户只需要安装并记住 `x402-cli`。Gateway 相关能力都集成在：
+
+```bash
+x402-cli gateway ...
+```
+
+常用入口：
+
+- 本地启动和测试：见 [`DEPLOYMENT.md`](DEPLOYMENT.md)
+- Provider 示例：见 [`examples/README.md`](examples/README.md)
+- 生成公开 catalog 文件：`x402-cli catalog export-gateway ...`
+
+注意：`provider.yml`、`.env`、上游 API key、钱包私钥只保存在服务方自己的 Gateway 运行环境，不提交到公开 Catalog 仓库。
+
+## English
+
 `x402-gateway` is a YAML-driven payment gateway for provider APIs. It runs in front of normal HTTP APIs, returns x402 `402 Payment Required` challenges for paid endpoints, verifies and settles payments through a facilitator, then forwards the request to the upstream API.
 
 For community users, the main entrypoint is `x402-cli`. Gateway commands are exposed as `x402-cli gateway ...`; the `x402-gateway` package remains the underlying runtime and compatibility entrypoint.

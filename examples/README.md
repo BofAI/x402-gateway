@@ -1,5 +1,24 @@
 # x402 Gateway Provider Examples
 
+## 中文说明
+
+这里是服务方接入 Gateway 的示例。默认入口是 `x402-cli`：
+
+```bash
+x402-cli gateway scaffold ...
+x402-cli gateway check ...
+x402-cli gateway start ...
+x402-cli catalog export-gateway ...
+```
+
+关键规则：
+
+- `provider.yml` 是私有运行时配置，只放在服务方自己的 Gateway 环境。
+- 上游 API key、bearer token、钱包私钥、`.env` 不进入公开仓库。
+- 对外提交到 `x402-catelog` 的只有 `catalog.json` 和 `pay.md`。
+
+## English
+
 These examples show how an API provider uses the gateway through the single
 user-facing command, `x402-cli`.
 

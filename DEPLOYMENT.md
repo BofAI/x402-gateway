@@ -4,6 +4,12 @@
 
 `provider.yml`、`.env`、上游 API key、钱包私钥只放在 Gateway 运行环境，不提交到 Catalog 仓库。
 
+## English Summary
+
+This document explains how to deploy the Gateway test environment. The Gateway loads local `provider.yml` files, returns x402 `402 Payment Required` challenges for paid endpoints, verifies and settles payments through a facilitator, and proxies successful requests to upstream APIs.
+
+Keep `provider.yml`, `.env`, upstream API keys, and wallet private keys in the Gateway runtime environment only. Do not submit them to the public Catalog repository.
+
 ## 1. 拉取代码
 
 ```bash
