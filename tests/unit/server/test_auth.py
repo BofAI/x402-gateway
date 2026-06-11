@@ -34,6 +34,23 @@ async def test_header_strategy_injects_value_from_env(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.asyncio
+async def test_header_strategy_prefers_inline_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MY_TOKEN", "env-token")
+    spec = RoutingAuthSpec(
+        method="header",
+        key="Authorization",
+        prefix="Bearer ",
+        value="inline-token",
+        value_from_env="MY_TOKEN",
+    )
+    strat = build_auth_strategy(spec)
+    assert strat is not None
+    req = _request()
+    await strat.apply(req)
+    assert req.headers["Authorization"] == "Bearer inline-token"
+
+
+@pytest.mark.asyncio
 async def test_query_param_strategy_appends_query(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ACME_KEY", "abc")
     spec = RoutingAuthSpec(method="query_param", key="apikey", value_from_env="ACME_KEY")

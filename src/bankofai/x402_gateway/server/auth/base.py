@@ -18,3 +18,10 @@ def env_value(name: str | None, *, default: str = "") -> str:
     if not name:
         return default
     return os.environ.get(name, default)
+
+
+def configured_value(value: str | None, value_from_env: str | None, *, default: str = "") -> str:
+    """Return an inline secret first, then fall back to an environment variable."""
+    if value:
+        return value
+    return env_value(value_from_env, default=default)

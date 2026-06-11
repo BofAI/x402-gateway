@@ -20,7 +20,7 @@ import hmac
 import httpx
 
 from bankofai.x402_gateway.config.spec import RoutingAuthSpec
-from bankofai.x402_gateway.server.auth.base import env_value
+from bankofai.x402_gateway.server.auth.base import configured_value
 
 
 class HmacAuthStrategy:
@@ -28,7 +28,7 @@ class HmacAuthStrategy:
         self._spec = spec
 
     async def apply(self, request: httpx.Request) -> None:
-        secret = env_value(self._spec.value_from_env)
+        secret = configured_value(self._spec.value, self._spec.value_from_env)
         if not secret:
             return
 

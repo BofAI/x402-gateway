@@ -65,6 +65,7 @@ class RoutingAuthSpec(BaseModel):
     method: AuthMethod
     key: str = "Authorization"
     prefix: str = ""
+    value: Optional[str] = None
     value_from_env: Optional[str] = None
     # generic strategy parameters; each strategy reads its own subset
     params: dict[str, object] = Field(default_factory=dict)
