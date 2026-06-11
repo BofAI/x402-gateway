@@ -5,10 +5,7 @@ from pathlib import Path
 import pytest
 
 from bankofai.x402_gateway.config.spec import ProviderSpec
-from bankofai.x402_gateway.server.signer import (
-    SignerNotConfigured,
-    resolve_signer,
-)
+from bankofai.x402_gateway.server.signer import resolve_signer
 
 
 def _make_spec(network: str, *, signer_block: dict | None = None, metering=None) -> ProviderSpec:
@@ -68,7 +65,7 @@ def test_profile_used_when_operator_block_missing(
     assert handle.profile == "prod-tron"
 
 
-def test_no_signer_with_paid_endpoints_raises(
+def test_no_signer_with_paid_endpoints_is_allowed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -78,8 +75,11 @@ def test_no_signer_with_paid_endpoints_raises(
         ],
     }
     spec = _make_spec("tron-mainnet", metering=metering)
-    with pytest.raises(SignerNotConfigured):
-        resolve_signer(spec)
+    handle = resolve_signer(spec)
+
+    assert handle.origin == "none"
+    assert handle.network == "tron:mainnet"
+    assert handle.address == "TRecipient"
 
 
 def test_no_signer_with_only_free_endpoints_is_allowed(

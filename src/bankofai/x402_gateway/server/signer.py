@@ -4,12 +4,13 @@ Priority order (first match wins):
   1. sandbox / testnet            -> ephemeral file-backed account
   2. operator.signer block        -> declared backend (privy / local_secure / raw_secret)
   3. CLI --profile or setup       -> agent_wallet.load_profile (TODO when agent-wallet lands)
-  4. nothing                      -> SignerNotConfigured, OK only when all endpoints free
+  4. nothing                      -> no signer handle
 
 For v0.6.1 the gateway does not actually need a signer in the request path —
 the buyer signs the payment authorization; the facilitator submits on-chain.
 We resolve a `SignerHandle` here purely so startup can surface configuration
-errors early and so future schemes (merchant co-sign) can hook in.
+errors early for explicitly configured signers and so future schemes
+(merchant co-sign) can hook in.
 """
 
 from __future__ import annotations
@@ -46,7 +47,7 @@ class SignerHandle:
 
 
 class SignerNotConfigured(Exception):
-    """Raised when no signer source resolves and the provider has paid endpoints."""
+    """Raised when a future signer-required mode cannot resolve signing material."""
 
 
 def _is_testnet(network: str) -> bool:
@@ -119,14 +120,15 @@ def resolve_signer(
             profile=profile,
         )
 
-    # Level 4: nothing — only OK when all endpoints are free
+    # Level 4: no signer. This is valid for the current paid proxy flow:
+    # the client signs the payment authorization and the facilitator handles
+    # verification/settlement. The provider recipient is still resolved from
+    # operator.recipient or recipients aliases.
     if has_paid_endpoints(spec):
-        raise SignerNotConfigured(
-            "no signer is configured but provider has paid endpoints; "
-            "fix this by one of: "
-            "(a) declare `operator.signer` in provider.yml; "
-            "(b) pass --profile to x402-gateway server start; "
-            "(c) pass --sandbox for local testing."
+        logger.info(
+            "provider %s has paid endpoints without a gateway signer; "
+            "continuing because current x402 payment flows are client-signed",
+            spec.name,
         )
     return SignerHandle(origin="none", network=operator.network, address=operator.recipient)
 

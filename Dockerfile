@@ -26,8 +26,6 @@ RUN useradd -r -u 1000 -g users -s /usr/sbin/nologin x402-gateway \
     && mkdir -p /app/providers /app/dist /app/log /home/x402-gateway \
     && chown -R x402-gateway:users /app /home/x402-gateway
 
-COPY --chown=x402-gateway:users providers/ ./providers/
-
 USER x402-gateway
 
 EXPOSE 8080
