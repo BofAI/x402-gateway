@@ -66,7 +66,15 @@ async def probe_facilitator_supported(url: Optional[str]) -> FacilitatorSupporte
         ) as client:
             response = await client.get("/supported")
             response.raise_for_status()
-            payload = response.json()
+            try:
+                payload = response.json()
+            except ValueError as exc:
+                return FacilitatorSupportedReport(
+                    reachable=False,
+                    schemes=[],
+                    networks=[],
+                    detail=f"invalid /supported JSON: {exc}",
+                )
     except httpx.HTTPError as exc:
         return FacilitatorSupportedReport(
             reachable=False, schemes=[], networks=[], detail=str(exc)

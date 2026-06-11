@@ -45,6 +45,27 @@ async def test_facilitator_supported_parses_kinds(monkeypatch: pytest.MonkeyPatc
 
 
 @pytest.mark.asyncio
+async def test_facilitator_supported_soft_fails_on_non_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<!doctype html>")
+
+    transport = httpx.MockTransport(handler)
+    original_init = httpx.AsyncClient.__init__
+
+    def patched_init(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        kwargs.setdefault("transport", transport)
+        return original_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(httpx.AsyncClient, "__init__", patched_init)
+
+    report = await probe_facilitator_supported("https://facilitator.example")
+    assert report.reachable is False
+    assert "invalid /supported JSON" in (report.detail or "")
+
+
+@pytest.mark.asyncio
 async def test_balance_probe_classifies_zero(monkeypatch: pytest.MonkeyPatch) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"balance": 0})
