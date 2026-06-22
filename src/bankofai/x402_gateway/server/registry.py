@@ -33,6 +33,26 @@ class ProviderEntry:
     )
 
 
+def _endpoint_path_matches(template: str, path: str) -> bool:
+    """Match endpoint paths with segment-level `{param}` placeholders."""
+    template_parts = template.strip("/").split("/") if template.strip("/") else []
+    path_parts = path.strip("/").split("/") if path.strip("/") else []
+    if len(template_parts) != len(path_parts):
+        return False
+    for template_part, path_part in zip(template_parts, path_parts):
+        if (
+            template_part.startswith("{")
+            and template_part.endswith("}")
+            and len(template_part) > 2
+        ):
+            if not path_part:
+                return False
+            continue
+        if template_part != path_part:
+            return False
+    return True
+
+
 class ProviderRegistry:
     """Thread-safe in-memory provider snapshot.
 
@@ -66,9 +86,16 @@ class ProviderRegistry:
             return None
         normalized_method = method.upper()
         normalized_path = "/" + path.lstrip("/")
+        template_candidates: list[EndpointSpec] = []
         for endpoint in provider.endpoints:
-            if endpoint.method == normalized_method and endpoint.path == normalized_path:
+            if endpoint.method != normalized_method:
+                continue
+            if endpoint.path == normalized_path:
                 return endpoint
+            if _endpoint_path_matches(endpoint.path, normalized_path):
+                template_candidates.append(endpoint)
+        if template_candidates:
+            return template_candidates[0]
         return None
 
     # --- Write helpers ------------------------------------------------------
