@@ -150,7 +150,8 @@ async def _build_report(
         signer_backend=signer.backend,
         facilitator_reachable=facilitator_report.reachable,
         facilitator_detail=facilitator_report.detail,
-        balance_status=balance_report.status if balance_report else None,
+        balance_severity=balance_report.severity if balance_report else None,
+        balance_display=balance_report.display if balance_report else None,
     )
     return StartupReport(
         spec=resolved_spec,
