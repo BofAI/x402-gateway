@@ -238,6 +238,36 @@ def test_free_endpoint_proxies_upstream(
         client.close()
 
 
+def test_template_endpoint_forwards_requested_path(
+    provider_yml_path, tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    upstream_calls: list[httpx.Request] = []
+
+    provider_text = provider_yml_path.read_text()
+    provider_text += """
+  - method: GET
+    path: /v1/quotation/{symbol}
+"""
+    provider_path = tmp_path / "provider.yml"
+    provider_path.write_text(provider_text)
+
+    def upstream_handler(request: httpx.Request) -> httpx.Response:
+        upstream_calls.append(request)
+        return httpx.Response(200, json={"symbol": "BTC"})
+
+    transport = httpx.MockTransport(upstream_handler)
+    client, _, _ = _build_test_client(
+        provider_path, transport=transport, monkeypatch=monkeypatch
+    )
+    try:
+        response = client.get("/providers/acme-weather/v1/quotation/BTC")
+        assert response.status_code == 200
+        assert len(upstream_calls) == 1
+        assert upstream_calls[0].url.path == "/v1/quotation/BTC"
+    finally:
+        client.close()
+
+
 def test_proxy_forwards_cloudflare_client_ip(
     provider_yml_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

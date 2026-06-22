@@ -250,12 +250,13 @@ async def proxy(provider_name: str, path: str, request: Request) -> Response:
         raise HTTPException(status_code=404, detail="endpoint not in allowlist")
 
     request_params = _request_params(request)
+    target_path = "/" + path.lstrip("/")
 
     # Free endpoint -> respond mode short-circuit or proxy forward
     if endpoint.metering is None:
         if entry.spec.routing.type == "respond":
             return JSONResponse(content={"status": "ok", "endpoint": endpoint.path})
-        status, headers, body, _ = await _forward_upstream(entry, request, endpoint.path)
+        status, headers, body, _ = await _forward_upstream(entry, request, target_path)
         return FastAPIResponse(content=body, status_code=status, headers=headers)
 
     payment_header = request.headers.get(PAYMENT_SIGNATURE_HEADER)
@@ -317,7 +318,7 @@ async def proxy(provider_name: str, path: str, request: Request) -> Response:
 
     # Forward upstream and attach PAYMENT-RESPONSE
     status, headers, body, _raw_headers = await _forward_upstream(
-        entry, request, endpoint.path
+        entry, request, target_path
     )
     headers[PAYMENT_RESPONSE_HEADER] = encode_payment_payload(
         settle_response.model_dump(by_alias=True)
