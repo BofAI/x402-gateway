@@ -32,7 +32,6 @@ Provider YAML
 - Management endpoints for health, providers, endpoints, and verify-only
   debugging.
 - Dockerfile and Docker Compose support.
-- Local mock facilitator for development.
 
 ## Provider Onboarding Flow
 
@@ -64,9 +63,7 @@ Buyer or agent calls gateway URL
 ## Deployment Shape
 
 The official service runs the same gateway container used for local development.
-Provider files are mounted or included in the image. The local Compose stack
-also starts a mock facilitator so the payment path can be debugged before using
-an external facilitator.
+Provider files are mounted or included in the image.
 
 ```bash
 docker compose up --build -d gateway

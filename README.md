@@ -21,7 +21,6 @@ runtime environment.
 - Management endpoints for health, provider state, endpoint state, and
   verify-only debugging.
 - Docker and Docker Compose support.
-- Local mock facilitator support for development.
 
 ## Repository Layout
 
@@ -45,7 +44,7 @@ payment terms, endpoint pricing, and upstream authentication.
 
 ## Run Locally
 
-Start the gateway and the local mock facilitator:
+Start the gateway:
 
 ```bash
 cp .env.example .env
@@ -58,21 +57,18 @@ Check the service:
 curl http://127.0.0.1:4020/__402/health
 curl http://127.0.0.1:4020/__402/providers
 curl http://127.0.0.1:4020/__402/endpoints
-curl http://127.0.0.1:4021/supported
 ```
 
 Default local ports:
 
 ```text
 Gateway:      http://127.0.0.1:4020
-Facilitator:  http://127.0.0.1:4021
-Upstream:     http://127.0.0.1:8080
 ```
 
-The default `.env.example` points the gateway at the local facilitator:
+The default `.env.example` uses a placeholder facilitator URL:
 
 ```text
-X402_FACILITATOR_URL=http://facilitator:4021
+X402_FACILITATOR_URL=https://admin-facilitator.bankofai.io/
 X402_GATEWAY_PUBLIC_BASE_URL=http://host.docker.internal:4020
 ```
 

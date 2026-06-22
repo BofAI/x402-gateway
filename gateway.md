@@ -60,7 +60,7 @@ fail startup or validation.
 
 ## Local Development
 
-Docker Compose starts the gateway, a local mock facilitator, and a demo upstream:
+Docker Compose starts the gateway:
 
 ```bash
 docker compose up --build -d gateway
@@ -70,19 +70,16 @@ Services:
 
 ```text
 gateway       http://127.0.0.1:4020
-facilitator   http://127.0.0.1:4021
-upstream      http://127.0.0.1:8080
 ```
 
-The example provider reads `X402_FACILITATOR_URL`, which defaults to
-`http://facilitator:4021` inside Compose.
+The example provider reads `X402_FACILITATOR_URL` from the environment.
 
 ## Debugging Focus
 
 The basic implementation is complete enough to enter integration debugging. The
 active focus is:
 
-- paid request flow with the local facilitator
+- paid request flow with the configured facilitator
 - provider-specific upstream auth behavior
 - client IP forwarding behavior
 - real facilitator compatibility

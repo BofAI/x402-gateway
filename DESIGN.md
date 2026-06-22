@@ -34,25 +34,15 @@ Responsibilities:
 - forward client IP headers to upstream services
 - expose management endpoints
 
-### Local Facilitator
+### External Dependencies
 
-The Docker Compose development stack includes a mock facilitator. It supports
-`/supported`, `/verify`, `/settle`, and control endpoints for debugging. This is
-a development dependency only. Production should point `X402_FACILITATOR_URL` at
-the selected facilitator.
-
-### Demo Upstream
-
-The local Docker Compose stack also includes a demo upstream API. The sample
-provider points `forward_url` at this service so debugging covers the full path:
+The gateway integrates with an external facilitator and provider-owned upstream
+APIs. Docker Compose in this repository starts only the gateway process:
 
 ```text
-client -> gateway -> facilitator -> gateway -> demo upstream
+client -> gateway -> facilitator
+client -> gateway -> provider upstream API
 ```
-
-The demo upstream exposes `/health` and `/v1/current`. `/v1/current` requires the
-gateway-injected bearer token, which verifies that upstream authentication
-injection works.
 
 ## Data Model
 
@@ -109,21 +99,15 @@ docker run \
 /__402/verify
 ```
 
-Use the local mock facilitator log to inspect verify and settle calls:
-
-```bash
-curl http://127.0.0.1:4021/control/log
-```
-
 ## Completion Criteria
 
 Basic development is complete when:
 
-- gateway and local facilitator start from Docker Compose
+- gateway starts from Docker Compose
 - provider files validate
 - gateway management endpoints work
 - paid routes return x402 challenges
-- free routes proxy successfully to the demo upstream
+- free routes proxy successfully to provider upstream APIs
 - upstream authentication injection works
 - client IP headers are forwarded upstream
-- local facilitator receives verify and settle calls during paid-flow tests
+- facilitator receives verify and settle calls during paid-flow tests

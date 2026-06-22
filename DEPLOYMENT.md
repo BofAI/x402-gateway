@@ -18,24 +18,14 @@ cd x402-gateway
 
 ## 2. Deployment Modes
 
-The repository supports two practical modes:
+The Compose file starts only the gateway service. Configure an external
+facilitator and provider upstreams through environment variables and provider
+YAML.
 
-```text
-Sandbox mode      Local facilitator, no real on-chain payment.
-Live mode         External facilitator and real recipient addresses.
-```
-
-Start with sandbox mode for API and payment-flow debugging, then switch to live
-mode when facilitator and wallet configuration are ready.
-
-## 3. Sandbox Mode
-
-Sandbox mode uses `docker-compose.yml` and starts:
+## 3. Docker Compose
 
 ```text
 gateway
-mock facilitator
-demo upstream
 ```
 
 Create a local environment file:
@@ -48,14 +38,13 @@ Make sure `.env` contains at least:
 
 ```bash
 X402_GATEWAY_PUBLIC_BASE_URL=http://host.docker.internal:4020
-X402_FACILITATOR_URL=http://facilitator:4021
-ACME_API_TOKEN=demo-upstream-token
+X402_FACILITATOR_URL=https://facilitator.example.com
 ```
 
 Build and start:
 
 ```bash
-docker compose build gateway upstream facilitator
+docker compose build gateway
 docker compose up -d gateway
 ```
 
@@ -91,7 +80,6 @@ Log locations:
 
 ```text
 gateway container:          /app/log/gateway.log
-mock facilitator container: /app/log/mock-facilitator.log
 host:                       ./log/
 ```
 
@@ -109,7 +97,6 @@ docker compose ps
 curl -fsS http://127.0.0.1:4020/__402/health
 curl -fsS http://127.0.0.1:4020/__402/providers
 curl -fsS http://127.0.0.1:4020/__402/endpoints
-curl -fsS http://127.0.0.1:4021/supported
 ```
 
 Paid endpoint check:
@@ -120,10 +107,9 @@ curl -i "http://127.0.0.1:4020/providers/acme-weather/v1/current?city=Singapore"
 
 The expected unpaid response is `402 Payment Required`.
 
-## 4. Live Mode
+## 4. Runtime Configuration
 
-Live mode does not use the mock facilitator. Configure an external facilitator
-and real recipient addresses in provider YAML.
+Configure an external facilitator and real recipient addresses in provider YAML.
 
 Required inputs:
 
@@ -270,6 +256,6 @@ Compose rollback:
 
 ```bash
 git checkout <previous-good-commit>
-docker compose build gateway upstream facilitator
+docker compose build gateway
 docker compose up -d gateway
 ```
