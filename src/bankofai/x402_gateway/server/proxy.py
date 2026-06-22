@@ -86,6 +86,52 @@ def filter_request_headers(headers: dict[str, str]) -> dict[str, str]:
     }
 
 
+def _first_forwarded_ip(value: str | None) -> str | None:
+    if not value:
+        return None
+    for part in value.split(","):
+        candidate = part.strip()
+        if candidate:
+            return candidate
+    return None
+
+
+def _client_ip_for_upstream(request: Request) -> tuple[str | None, bool]:
+    cf_ip = request.headers.get("cf-connecting-ip")
+    if cf_ip:
+        return cf_ip.strip(), True
+
+    forwarded_ip = _first_forwarded_ip(request.headers.get("x-forwarded-for"))
+    if forwarded_ip:
+        return forwarded_ip, False
+
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip.strip(), False
+
+    if request.client and request.client.host:
+        return request.client.host, False
+    return None, False
+
+
+def add_client_ip_headers(headers: dict[str, str], request: Request) -> dict[str, str]:
+    client_ip, from_cloudflare = _client_ip_for_upstream(request)
+    if not client_ip:
+        return headers
+
+    headers["x-real-ip"] = client_ip
+    headers["x-client-ip"] = client_ip
+
+    existing_xff = request.headers.get("x-forwarded-for")
+    if from_cloudflare:
+        headers["x-forwarded-for"] = client_ip
+    elif existing_xff:
+        headers["x-forwarded-for"] = existing_xff
+    else:
+        headers["x-forwarded-for"] = client_ip
+    return headers
+
+
 def filter_response_headers(headers: httpx.Headers) -> dict[str, str]:
     return {
         key: value for key, value in headers.items() if key.lower() not in STRIP_RESPONSE_HEADERS
@@ -163,6 +209,7 @@ async def _forward_upstream(
 
     target = upstream_url(provider.routing.url, target_path)
     headers = filter_request_headers(dict(request.headers))
+    headers = add_client_ip_headers(headers, request)
     payload_body = body if body is not None else await request.body()
 
     timeout = httpx.Timeout(30.0, connect=5.0)

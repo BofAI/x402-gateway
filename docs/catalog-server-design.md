@@ -792,7 +792,7 @@ public logo/docs metadata
   "provider_count": 12,
   "first_party_count": 3,
   "chain_count": 2,
-  "base_url": "https://catalog.bankofai.io/api",
+  "base_url": "https://tm-x402-catelog.bankofai.io/api",
   "frontend": {
     "featured_fqns": ["acme-weather"],
     "categories": [
@@ -835,7 +835,7 @@ public logo/docs metadata
       "is_first_party": false,
       "is_featured": true,
       "featured_tags": ["weather", "data"],
-      "service_url": "https://gateway.bankofai.io/providers/acme-weather",
+      "service_url": "https://tm-x402-gateway.bankofai.io/providers/acme-weather",
       "endpoint_count": 2,
       "has_metering": true,
       "has_free_tier": true,
@@ -882,12 +882,12 @@ public logo/docs metadata
   "is_first_party": false,
   "is_featured": true,
   "featured_tags": ["weather", "data"],
-  "service_url": "https://gateway.bankofai.io/providers/acme-weather",
+  "service_url": "https://tm-x402-gateway.bankofai.io/providers/acme-weather",
   "endpoints": [
     {
       "method": "GET",
       "path": "/v1/current",
-      "url": "https://gateway.bankofai.io/providers/acme-weather/v1/current",
+      "url": "https://tm-x402-gateway.bankofai.io/providers/acme-weather/v1/current",
       "description": "Current weather for a city",
       "i18n": {
         "zh-CN": {
@@ -921,7 +921,7 @@ public logo/docs metadata
     "description": "Current weather API",
     "category": "data",
     "version": "v1",
-    "serviceUrl": "https://gateway.bankofai.io/providers/acme-weather"
+    "serviceUrl": "https://tm-x402-gateway.bankofai.io/providers/acme-weather"
   },
   "operator": {
     "network": "tron:mainnet",
@@ -937,7 +937,7 @@ public logo/docs metadata
     {
       "method": "GET",
       "path": "/v1/current",
-      "url": "https://gateway.bankofai.io/providers/acme-weather/v1/current",
+      "url": "https://tm-x402-gateway.bankofai.io/providers/acme-weather/v1/current",
       "description": "Current weather for a city",
       "metered": true,
       "priceUsd": 0.002,
@@ -1045,7 +1045,7 @@ Provider card 建议字段：
   "is_first_party": false,
   "is_featured": true,
   "featured_tags": ["weather", "data"],
-  "service_url": "https://gateway.bankofai.io/providers/acme-weather",
+  "service_url": "https://tm-x402-gateway.bankofai.io/providers/acme-weather",
   "endpoint_count": 2,
   "has_metering": true,
   "has_free_tier": true,
@@ -1154,7 +1154,7 @@ Ranking 字段：
         {
           "method": "GET",
           "path": "/v1/current",
-          "url": "https://gateway.bankofai.io/providers/acme-weather/v1/current",
+          "url": "https://tm-x402-gateway.bankofai.io/providers/acme-weather/v1/current",
           "metered": true,
           "min_price_usd": 0.002,
           "max_price_usd": 0.002
@@ -1704,7 +1704,7 @@ return endpoint candidates with exact gateway URLs
    Price: $0.002
    Match: current city-level weather endpoint
 
-   GET https://gateway.bankofai.io/providers/acme-weather/v1/current
+   GET https://tm-x402-gateway.bankofai.io/providers/acme-weather/v1/current
    Use for: current weather lookup by city
 ```
 
@@ -1719,7 +1719,7 @@ x402-cli catalog pay-json acme-weather
 调用：
 
 ```bash
-x402-cli curl "https://gateway.bankofai.io/providers/acme-weather/v1/current?city=Singapore"
+x402-cli curl "https://tm-x402-gateway.bankofai.io/providers/acme-weather/v1/current?city=Singapore"
 ```
 
 `x402-cli curl` 处理：
@@ -1788,7 +1788,7 @@ Agent 付费前 call plan：
 {
   "provider": "acme-weather",
   "endpoint": "GET /v1/current",
-  "url": "https://gateway.bankofai.io/providers/acme-weather/v1/current?city=Singapore",
+  "url": "https://tm-x402-gateway.bankofai.io/providers/acme-weather/v1/current?city=Singapore",
   "why": "The endpoint is specifically for current city-level weather.",
   "expected_paid_calls": 1,
   "estimated_total_usd": 0.002

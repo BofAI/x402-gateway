@@ -238,6 +238,66 @@ def test_free_endpoint_proxies_upstream(
         client.close()
 
 
+def test_proxy_forwards_cloudflare_client_ip(
+    provider_yml_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    upstream_calls: list[httpx.Request] = []
+
+    def upstream_handler(request: httpx.Request) -> httpx.Response:
+        upstream_calls.append(request)
+        return httpx.Response(200, json={"healthy": True})
+
+    transport = httpx.MockTransport(upstream_handler)
+    client, _, _ = _build_test_client(
+        provider_yml_path, transport=transport, monkeypatch=monkeypatch
+    )
+    try:
+        response = client.get(
+            "/providers/acme-weather/health",
+            headers={
+                "CF-Connecting-IP": "203.0.113.10",
+                "X-Forwarded-For": "198.51.100.20",
+                "X-Real-IP": "198.51.100.30",
+            },
+        )
+        assert response.status_code == 200
+        assert len(upstream_calls) == 1
+        headers = upstream_calls[0].headers
+        assert headers["x-real-ip"] == "203.0.113.10"
+        assert headers["x-client-ip"] == "203.0.113.10"
+        assert headers["x-forwarded-for"] == "203.0.113.10"
+    finally:
+        client.close()
+
+
+def test_proxy_forwards_x_forwarded_for_without_cloudflare(
+    provider_yml_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    upstream_calls: list[httpx.Request] = []
+
+    def upstream_handler(request: httpx.Request) -> httpx.Response:
+        upstream_calls.append(request)
+        return httpx.Response(200, json={"healthy": True})
+
+    transport = httpx.MockTransport(upstream_handler)
+    client, _, _ = _build_test_client(
+        provider_yml_path, transport=transport, monkeypatch=monkeypatch
+    )
+    try:
+        response = client.get(
+            "/providers/acme-weather/health",
+            headers={"X-Forwarded-For": "198.51.100.20, 198.51.100.21"},
+        )
+        assert response.status_code == 200
+        assert len(upstream_calls) == 1
+        headers = upstream_calls[0].headers
+        assert headers["x-real-ip"] == "198.51.100.20"
+        assert headers["x-client-ip"] == "198.51.100.20"
+        assert headers["x-forwarded-for"] == "198.51.100.20, 198.51.100.21"
+    finally:
+        client.close()
+
+
 def test_metered_endpoint_settles_and_forwards(
     provider_yml_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

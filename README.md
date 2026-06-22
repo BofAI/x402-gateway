@@ -221,7 +221,7 @@ The official gateway service is a long-running HTTP process:
 
 ```text
 Buyer / Agent
-  -> https://gateway.bankofai.io/providers/<provider>/<path>
+  -> https://tm-x402-gateway.bankofai.io/providers/<provider>/<path>
   -> x402-gateway
   -> provider upstream API
 

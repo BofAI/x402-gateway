@@ -48,7 +48,7 @@ cp .env.example .env
 确认 `.env` 至少包含：
 
 ```bash
-X402_GATEWAY_PUBLIC_BASE_URL=https://gateway-tn.example.com
+X402_GATEWAY_PUBLIC_BASE_URL=https://tm-x402-gateway.bankofai.io
 X402_FACILITATOR_URL=http://facilitator:4021
 ACME_API_TOKEN=demo-upstream-token
 ```
@@ -136,7 +136,7 @@ provider.yml 里的 operator.recipient
 示例 `.env`：
 
 ```bash
-X402_GATEWAY_PUBLIC_BASE_URL=https://gateway-tn.example.com
+X402_GATEWAY_PUBLIC_BASE_URL=https://tm-x402-gateway.bankofai.io
 X402_FACILITATOR_URL=https://facilitator-tn.example.com
 X402_GATEWAY_PORT=4020
 ```
@@ -164,7 +164,7 @@ docker run -d \
   -v "$(pwd)/providers:/app/providers:ro" \
   -v "$(pwd)/log:/app/log" \
   x402-gateway:tn \
-  sh -c 'mkdir -p /app/log && x402-cli gateway start \
+  sh -c 'mkdir -p /app/log && x402-gateway server start \
     --providers-dir /app/providers \
     --host 0.0.0.0 \
     --port 8080 \
@@ -183,7 +183,7 @@ tail -n 20 ./log/gateway.log
 外部域名检查：
 
 ```bash
-curl -fsS https://gateway-tn.example.com/__402/health
+curl -fsS https://tm-x402-gateway.bankofai.io/__402/health
 ```
 
 ## 5. 反向代理
@@ -193,7 +193,7 @@ Nginx 示例：
 ```nginx
 server {
     listen 443 ssl;
-    server_name gateway-tn.example.com;
+    server_name tm-x402-gateway.bankofai.io;
 
     location / {
         proxy_pass http://127.0.0.1:4020;
@@ -209,7 +209,7 @@ server {
 Gateway 域名确定后，Catalog 中公开 endpoint 需要指向 Gateway TN：
 
 ```text
-https://gateway-tn.example.com/providers/open-meteo-weather/v1/forecast
+https://tm-x402-gateway.bankofai.io/providers/open-meteo-weather/v1/forecast
 ```
 
 Catalog 仓库只提交：
@@ -256,7 +256,7 @@ Catalog 搜索：
 
 ```bash
 x402-cli catalog search meteo \
-  --catalog https://catalog-tn.example.com/api/catalog.json \
+  --catalog https://tm-x402-catelog.bankofai.io/api/catalog.json \
   --json
 ```
 
@@ -264,7 +264,7 @@ x402-cli catalog search meteo \
 
 ```bash
 x402-cli catalog show open-meteo-weather \
-  --catalog https://catalog-tn.example.com/api/catalog.json \
+  --catalog https://tm-x402-catelog.bankofai.io/api/catalog.json \
   --json
 ```
 
@@ -272,14 +272,14 @@ x402-cli catalog show open-meteo-weather \
 
 ```bash
 x402-cli catalog pay-json open-meteo-weather \
-  --catalog https://catalog-tn.example.com/api/catalog.json
+  --catalog https://tm-x402-catelog.bankofai.io/api/catalog.json
 ```
 
 调用 Gateway：
 
 ```bash
 x402-cli pay \
-  "https://gateway-tn.example.com/providers/open-meteo-weather/v1/forecast?latitude=31.2304&longitude=121.4737&current=temperature_2m&timezone=auto"
+  "https://tm-x402-gateway.bankofai.io/providers/open-meteo-weather/v1/forecast?latitude=31.2304&longitude=121.4737&current=temperature_2m&timezone=auto"
 ```
 
 如果需要限制链：
@@ -287,7 +287,7 @@ x402-cli pay \
 ```bash
 x402-cli pay \
   --network eip155:97 \
-  "https://gateway-tn.example.com/providers/open-meteo-weather/v1/forecast?latitude=31.2304&longitude=121.4737&current=temperature_2m&timezone=auto"
+  "https://tm-x402-gateway.bankofai.io/providers/open-meteo-weather/v1/forecast?latitude=31.2304&longitude=121.4737&current=temperature_2m&timezone=auto"
 ```
 
 ## 8. 验收清单
@@ -298,7 +298,7 @@ Gateway 容器启动成功
 /__402/providers 能看到 open-meteo-weather
 /__402/endpoints 能看到 /providers/open-meteo-weather/v1/forecast
 未支付请求返回 402 Payment Required
-Catalog endpoint.url 指向 gateway-tn.example.com
+Catalog endpoint.url 指向 tm-x402-gateway.bankofai.io
 x402-cli catalog search 能搜到 open-meteo-weather
 x402-cli pay 能完成 sandbox 或测试网支付流程
 ```
