@@ -270,7 +270,7 @@ async def _forward_upstream(
             await auth.apply(upstream_request)
         try:
             upstream_response = await client.send(upstream_request)
-        except Exception:
+        except httpx.HTTPError as exc:
             duration_ms = round((time.perf_counter() - started) * 1000, 2)
             metrics = get_metrics(request)
             if metrics is not None:
@@ -290,7 +290,7 @@ async def _forward_upstream(
                 path=target_path,
                 duration_ms=duration_ms,
             )
-            raise
+            raise HTTPException(status_code=502, detail="upstream request failed") from exc
 
     duration_ms = round((time.perf_counter() - started) * 1000, 2)
     metrics = get_metrics(request)
@@ -478,7 +478,30 @@ async def proxy(provider_name: str, path: str, request: Request) -> Response:
 
     # Hand off to facilitator
     verify_started = time.perf_counter()
-    verify_response = await entry.facilitator.verify(payload, requirement)
+    try:
+        verify_response = await entry.facilitator.verify(payload, requirement)
+    except Exception as exc:
+        verify_duration_ms = round((time.perf_counter() - verify_started) * 1000, 2)
+        if metrics is not None:
+            metrics.inc(
+                "x402_gateway_payment_verify_total",
+                provider=provider_name,
+                method=request.method,
+                endpoint=endpoint.path,
+                result="error",
+            )
+        log_event(
+            logger,
+            logging.ERROR,
+            "gateway.payment.verify_error",
+            request_id=_request_id(request),
+            provider=provider_name,
+            method=request.method,
+            path=target_path,
+            endpoint=endpoint.path,
+            duration_ms=verify_duration_ms,
+        )
+        raise HTTPException(status_code=502, detail="facilitator verify failed") from exc
     verify_duration_ms = round((time.perf_counter() - verify_started) * 1000, 2)
     if not verify_response.is_valid:
         if metrics is not None:
@@ -531,7 +554,30 @@ async def proxy(provider_name: str, path: str, request: Request) -> Response:
     )
 
     settle_started = time.perf_counter()
-    settle_response = await entry.facilitator.settle(payload, requirement)
+    try:
+        settle_response = await entry.facilitator.settle(payload, requirement)
+    except Exception as exc:
+        settle_duration_ms = round((time.perf_counter() - settle_started) * 1000, 2)
+        if metrics is not None:
+            metrics.inc(
+                "x402_gateway_payment_settle_total",
+                provider=provider_name,
+                method=request.method,
+                endpoint=endpoint.path,
+                result="error",
+            )
+        log_event(
+            logger,
+            logging.ERROR,
+            "gateway.payment.settle_error",
+            request_id=_request_id(request),
+            provider=provider_name,
+            method=request.method,
+            path=target_path,
+            endpoint=endpoint.path,
+            duration_ms=settle_duration_ms,
+        )
+        raise HTTPException(status_code=502, detail="facilitator settle failed") from exc
     settle_duration_ms = round((time.perf_counter() - settle_started) * 1000, 2)
     if not settle_response.success:
         if metrics is not None:

@@ -27,7 +27,7 @@ def _format_labels(labels: Labels) -> str:
 @dataclass
 class MetricsStore:
     counters: dict[tuple[str, Labels], float] = field(default_factory=dict)
-    histograms: dict[tuple[str, Labels], list[float]] = field(default_factory=dict)
+    summaries: dict[tuple[str, Labels], tuple[int, float]] = field(default_factory=dict)
     _lock: Lock = field(default_factory=Lock)
 
     def inc(
@@ -44,7 +44,8 @@ class MetricsStore:
     def observe(self, name: str, value: float, **labels: str | int | float | None) -> None:
         key = (name, _labels(labels))
         with self._lock:
-            self.histograms.setdefault(key, []).append(value)
+            count, total = self.summaries.get(key, (0, 0.0))
+            self.summaries[key] = (count + 1, total + value)
 
     def record_http_request(
         self,
@@ -71,7 +72,7 @@ class MetricsStore:
     def to_prometheus(self) -> str:
         with self._lock:
             counters = dict(self.counters)
-            histograms = {key: list(values) for key, values in self.histograms.items()}
+            summaries = dict(self.summaries)
 
         lines = [
             "# HELP x402_gateway_http_requests_total Total HTTP requests handled by the gateway.",
@@ -85,7 +86,7 @@ class MetricsStore:
             ]
         )
         lines.extend(
-            _format_summary_series(histograms, "x402_gateway_http_request_duration_seconds")
+            _format_summary_series(summaries, "x402_gateway_http_request_duration_seconds")
         )
 
         business_counters = [
@@ -111,13 +112,11 @@ def _format_counter_series(
 
 
 def _format_summary_series(
-    histograms: dict[tuple[str, Labels], list[float]],
+    summaries: dict[tuple[str, Labels], tuple[int, float]],
     name: str,
 ) -> Iterable[str]:
-    for (metric_name, labels), values in sorted(histograms.items()):
+    for (metric_name, labels), (count, total) in sorted(summaries.items()):
         if metric_name != name:
             continue
-        count = len(values)
-        total = sum(values)
         yield f"{metric_name}_count{_format_labels(labels)} {count}"
         yield f"{metric_name}_sum{_format_labels(labels)} {total:g}"

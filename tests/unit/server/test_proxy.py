@@ -43,6 +43,8 @@ class _FakeFacilitator:
         tx_hash: str = "0xdeadbeef",
         fee_to: str | None = None,
         fee_amount: str = "0",
+        raise_verify: bool = False,
+        raise_settle: bool = False,
     ) -> None:
         self.fee_quote_calls: list = []
         self.verify_calls: list = []
@@ -52,6 +54,8 @@ class _FakeFacilitator:
         self._tx_hash = tx_hash
         self._fee_to = fee_to
         self._fee_amount = fee_amount
+        self._raise_verify = raise_verify
+        self._raise_settle = raise_settle
 
     async def supported(self) -> SupportedResponse:
         return SupportedResponse(kinds=[])
@@ -77,12 +81,16 @@ class _FakeFacilitator:
 
     async def verify(self, payload, requirements) -> VerifyResponse:
         self.verify_calls.append((payload, requirements))
+        if self._raise_verify:
+            raise RuntimeError("verify unavailable")
         if self._verify_result:
             return VerifyResponse(isValid=True)
         return VerifyResponse(isValid=False, invalidReason="forced_fail")
 
     async def settle(self, payload, requirements) -> SettleResponse:
         self.settle_calls.append((payload, requirements))
+        if self._raise_settle:
+            raise RuntimeError("settle unavailable")
         if self._settle_result:
             return SettleResponse(
                 success=True, transaction=self._tx_hash, network=requirements.network
@@ -319,6 +327,29 @@ def test_free_endpoint_proxies_upstream(
         client.close()
 
 
+def test_upstream_exception_returns_502(
+    provider_yml_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def upstream_handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("upstream down", request=request)
+
+    transport = httpx.MockTransport(upstream_handler)
+    client, _, _ = _build_test_client(
+        provider_yml_path, transport=transport, monkeypatch=monkeypatch
+    )
+    try:
+        response = client.get("/providers/acme-weather/health")
+        assert response.status_code == 502
+        assert response.json()["detail"] == "upstream request failed"
+        metrics = client.get("/__402/metrics").text
+        assert (
+            'x402_gateway_upstream_requests_total{method="GET",'
+            'provider="acme-weather",result="error"} 1'
+        ) in metrics
+    finally:
+        client.close()
+
+
 def test_template_endpoint_forwards_requested_path(
     provider_yml_path, tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -500,5 +531,79 @@ def test_metered_endpoint_400s_when_verify_fails(
         assert response.json()["invalidReason"] == "forced_fail"
         assert len(fac.settle_calls) == 0
         assert len(upstream_calls) == 0
+    finally:
+        client.close()
+
+
+def test_metered_endpoint_502s_when_verify_raises(
+    provider_yml_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    facilitator = _FakeFacilitator(raise_verify=True)
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json={}))
+    client, _, _ = _build_test_client(
+        provider_yml_path,
+        facilitator=facilitator,
+        transport=transport,
+        monkeypatch=monkeypatch,
+    )
+
+    try:
+        spec = load_provider_file(provider_yml_path)
+        _, requirements = build_payment_requirements(spec, spec.endpoints[0])
+        payload = PaymentPayload(
+            x402Version=2,
+            accepted=requirements[0],
+            payload=PaymentPayloadData(signature="0xdeadbeef"),
+        )
+
+        response = client.get(
+            "/providers/acme-weather/v1/current",
+            headers={PAYMENT_SIGNATURE_HEADER: encode_payment_payload(payload)},
+        )
+
+        assert response.status_code == 502
+        assert response.json()["detail"] == "facilitator verify failed"
+        metrics = client.get("/__402/metrics").text
+        assert (
+            'x402_gateway_payment_verify_total{endpoint="/v1/current",'
+            'method="GET",provider="acme-weather",result="error"} 1'
+        ) in metrics
+    finally:
+        client.close()
+
+
+def test_metered_endpoint_502s_when_settle_raises(
+    provider_yml_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    facilitator = _FakeFacilitator(raise_settle=True)
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json={}))
+    client, _, _ = _build_test_client(
+        provider_yml_path,
+        facilitator=facilitator,
+        transport=transport,
+        monkeypatch=monkeypatch,
+    )
+
+    try:
+        spec = load_provider_file(provider_yml_path)
+        _, requirements = build_payment_requirements(spec, spec.endpoints[0])
+        payload = PaymentPayload(
+            x402Version=2,
+            accepted=requirements[0],
+            payload=PaymentPayloadData(signature="0xdeadbeef"),
+        )
+
+        response = client.get(
+            "/providers/acme-weather/v1/current",
+            headers={PAYMENT_SIGNATURE_HEADER: encode_payment_payload(payload)},
+        )
+
+        assert response.status_code == 502
+        assert response.json()["detail"] == "facilitator settle failed"
+        metrics = client.get("/__402/metrics").text
+        assert (
+            'x402_gateway_payment_settle_total{endpoint="/v1/current",'
+            'method="GET",provider="acme-weather",result="error"} 1'
+        ) in metrics
     finally:
         client.close()
