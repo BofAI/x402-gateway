@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from urllib.parse import parse_qsl, urljoin
 
 import httpx
@@ -36,6 +37,8 @@ from bankofai.x402_gateway.server.payment import (
     match_requirement,
 )
 from bankofai.x402_gateway.server.registry import ProviderEntry, ProviderRegistry
+from bankofai.x402_gateway.telemetry.logging import log_event
+from bankofai.x402_gateway.telemetry.metrics import MetricsStore
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +86,16 @@ def get_registry(request: Request) -> ProviderRegistry:
     if not isinstance(registry, ProviderRegistry):
         raise RuntimeError("provider registry is not configured")
     return registry
+
+
+def get_metrics(request: Request) -> MetricsStore | None:
+    metrics = getattr(request.app.state, "metrics", None)
+    return metrics if isinstance(metrics, MetricsStore) else None
+
+
+def _request_id(request: Request) -> str | None:
+    value = getattr(request.state, "request_id", None)
+    return value if isinstance(value, str) else None
 
 
 def filter_request_headers(headers: dict[str, str]) -> dict[str, str]:
@@ -243,6 +256,7 @@ async def _forward_upstream(
     payload_body = body if body is not None else await request.body()
 
     timeout = httpx.Timeout(30.0, connect=5.0)
+    started = time.perf_counter()
     async with httpx.AsyncClient(follow_redirects=False, timeout=timeout) as client:
         upstream_request = client.build_request(
             request.method,
@@ -254,7 +268,51 @@ async def _forward_upstream(
         auth = build_auth_strategy(provider.routing.auth)
         if auth is not None:
             await auth.apply(upstream_request)
-        upstream_response = await client.send(upstream_request)
+        try:
+            upstream_response = await client.send(upstream_request)
+        except Exception:
+            duration_ms = round((time.perf_counter() - started) * 1000, 2)
+            metrics = get_metrics(request)
+            if metrics is not None:
+                metrics.inc(
+                    "x402_gateway_upstream_requests_total",
+                    provider=provider.name,
+                    method=request.method,
+                    result="error",
+                )
+            log_event(
+                logger,
+                logging.ERROR,
+                "gateway.upstream.failed",
+                request_id=_request_id(request),
+                provider=provider.name,
+                method=request.method,
+                path=target_path,
+                duration_ms=duration_ms,
+            )
+            raise
+
+    duration_ms = round((time.perf_counter() - started) * 1000, 2)
+    metrics = get_metrics(request)
+    if metrics is not None:
+        metrics.inc(
+            "x402_gateway_upstream_requests_total",
+            provider=provider.name,
+            method=request.method,
+            status_code=upstream_response.status_code,
+            result="success",
+        )
+    log_event(
+        logger,
+        logging.INFO,
+        "gateway.upstream.completed",
+        request_id=_request_id(request),
+        provider=provider.name,
+        method=request.method,
+        path=target_path,
+        status_code=upstream_response.status_code,
+        duration_ms=duration_ms,
+    )
 
     return (
         upstream_response.status_code,
@@ -272,20 +330,49 @@ async def proxy(provider_name: str, path: str, request: Request) -> Response:
     registry = get_registry(request)
     entry = registry.get_entry(provider_name)
     if entry is None:
+        log_event(
+            logger,
+            logging.WARNING,
+            "gateway.proxy.provider_not_found",
+            request_id=_request_id(request),
+            provider=provider_name,
+            method=request.method,
+            path="/" + path.lstrip("/"),
+        )
         raise HTTPException(status_code=404, detail="provider not found")
 
     endpoint = registry.match_endpoint(provider_name, request.method, path)
     if endpoint is None:
         # endpoints[] is an allowlist (gateway.md §2.2): unknown paths are 404
+        log_event(
+            logger,
+            logging.INFO,
+            "gateway.proxy.endpoint_not_allowed",
+            request_id=_request_id(request),
+            provider=provider_name,
+            method=request.method,
+            path="/" + path.lstrip("/"),
+        )
         raise HTTPException(status_code=404, detail="endpoint not in allowlist")
 
     body_bytes = await request.body()
     request_params = _request_params(request, body_bytes)
     target_path = "/" + path.lstrip("/")
+    metrics = get_metrics(request)
 
     # Free endpoint -> respond mode short-circuit or proxy forward
     if endpoint.metering is None:
         if entry.spec.routing.type == "respond":
+            log_event(
+                logger,
+                logging.INFO,
+                "gateway.proxy.responded",
+                request_id=_request_id(request),
+                provider=provider_name,
+                method=request.method,
+                path=target_path,
+                metered=False,
+            )
             return JSONResponse(content={"status": "ok", "endpoint": endpoint.path})
         status, headers, body, _ = await _forward_upstream(
             entry, request, target_path, body=body_bytes
@@ -300,6 +387,16 @@ async def proxy(provider_name: str, path: str, request: Request) -> Response:
     await _attach_fee_quotes(entry, payment_required)
     if not payment_required.accepts:
         # metered but no currencies declared — treat as misconfiguration
+        log_event(
+            logger,
+            logging.ERROR,
+            "gateway.payment.misconfigured",
+            request_id=_request_id(request),
+            provider=provider_name,
+            method=request.method,
+            path=target_path,
+            reason="no_payment_requirements",
+        )
         return JSONResponse(
             status_code=500,
             content={"error": "metered endpoint has no payment requirements; "
@@ -307,13 +404,48 @@ async def proxy(provider_name: str, path: str, request: Request) -> Response:
         )
 
     if not payment_header:
+        if metrics is not None:
+            metrics.inc(
+                "x402_gateway_payment_challenges_total",
+                provider=provider_name,
+                method=request.method,
+                endpoint=endpoint.path,
+            )
+        log_event(
+            logger,
+            logging.INFO,
+            "gateway.payment.challenge",
+            request_id=_request_id(request),
+            provider=provider_name,
+            method=request.method,
+            path=target_path,
+            endpoint=endpoint.path,
+        )
         return _payment_required_response(payment_required)
 
     # Decode + structural-match
     try:
         payload = decode_payment_header(payment_header)
     except Exception as exc:  # pragma: no cover - hard to coerce in tests
-        logger.warning("failed to decode PAYMENT-SIGNATURE: %s", exc)
+        if metrics is not None:
+            metrics.inc(
+                "x402_gateway_payment_verify_total",
+                provider=provider_name,
+                method=request.method,
+                endpoint=endpoint.path,
+                result="decode_failed",
+            )
+        log_event(
+            logger,
+            logging.WARNING,
+            "gateway.payment.decode_failed",
+            request_id=_request_id(request),
+            provider=provider_name,
+            method=request.method,
+            path=target_path,
+            endpoint=endpoint.path,
+            reason=str(exc),
+        )
         return JSONResponse(
             status_code=400,
             content={"isValid": False, "invalidReason": f"invalid_payment_payload: {exc}"},
@@ -321,14 +453,54 @@ async def proxy(provider_name: str, path: str, request: Request) -> Response:
 
     requirement = match_requirement(payload, payment_required.accepts)
     if requirement is None:
+        if metrics is not None:
+            metrics.inc(
+                "x402_gateway_payment_verify_total",
+                provider=provider_name,
+                method=request.method,
+                endpoint=endpoint.path,
+                result="requirement_mismatch",
+            )
+        log_event(
+            logger,
+            logging.INFO,
+            "gateway.payment.requirement_mismatch",
+            request_id=_request_id(request),
+            provider=provider_name,
+            method=request.method,
+            path=target_path,
+            endpoint=endpoint.path,
+        )
         return JSONResponse(
             status_code=400,
             content={"isValid": False, "invalidReason": "payment_requirement_mismatch"},
         )
 
     # Hand off to facilitator
+    verify_started = time.perf_counter()
     verify_response = await entry.facilitator.verify(payload, requirement)
+    verify_duration_ms = round((time.perf_counter() - verify_started) * 1000, 2)
     if not verify_response.is_valid:
+        if metrics is not None:
+            metrics.inc(
+                "x402_gateway_payment_verify_total",
+                provider=provider_name,
+                method=request.method,
+                endpoint=endpoint.path,
+                result="invalid",
+            )
+        log_event(
+            logger,
+            logging.INFO,
+            "gateway.payment.verify_failed",
+            request_id=_request_id(request),
+            provider=provider_name,
+            method=request.method,
+            path=target_path,
+            endpoint=endpoint.path,
+            reason=verify_response.invalid_reason or "verify_failed",
+            duration_ms=verify_duration_ms,
+        )
         return JSONResponse(
             status_code=400,
             content={
@@ -336,9 +508,53 @@ async def proxy(provider_name: str, path: str, request: Request) -> Response:
                 "invalidReason": verify_response.invalid_reason or "verify_failed",
             },
         )
+    if metrics is not None:
+        metrics.inc(
+            "x402_gateway_payment_verify_total",
+            provider=provider_name,
+            method=request.method,
+            endpoint=endpoint.path,
+            result="valid",
+        )
+    log_event(
+        logger,
+        logging.INFO,
+        "gateway.payment.verified",
+        request_id=_request_id(request),
+        provider=provider_name,
+        method=request.method,
+        path=target_path,
+        endpoint=endpoint.path,
+        network=requirement.network,
+        asset=requirement.asset,
+        duration_ms=verify_duration_ms,
+    )
 
+    settle_started = time.perf_counter()
     settle_response = await entry.facilitator.settle(payload, requirement)
+    settle_duration_ms = round((time.perf_counter() - settle_started) * 1000, 2)
     if not settle_response.success:
+        if metrics is not None:
+            metrics.inc(
+                "x402_gateway_payment_settle_total",
+                provider=provider_name,
+                method=request.method,
+                endpoint=endpoint.path,
+                result="failed",
+            )
+        log_event(
+            logger,
+            logging.ERROR,
+            "gateway.payment.settle_failed",
+            request_id=_request_id(request),
+            provider=provider_name,
+            method=request.method,
+            path=target_path,
+            endpoint=endpoint.path,
+            reason=settle_response.error_reason,
+            network=settle_response.network,
+            duration_ms=settle_duration_ms,
+        )
         return JSONResponse(
             status_code=500,
             content={
@@ -348,6 +564,26 @@ async def proxy(provider_name: str, path: str, request: Request) -> Response:
                 "network": settle_response.network,
             },
         )
+    if metrics is not None:
+        metrics.inc(
+            "x402_gateway_payment_settle_total",
+            provider=provider_name,
+            method=request.method,
+            endpoint=endpoint.path,
+            result="success",
+        )
+    log_event(
+        logger,
+        logging.INFO,
+        "gateway.payment.settled",
+        request_id=_request_id(request),
+        provider=provider_name,
+        method=request.method,
+        path=target_path,
+        endpoint=endpoint.path,
+        network=settle_response.network,
+        duration_ms=settle_duration_ms,
+    )
 
     # Forward upstream and attach PAYMENT-RESPONSE
     status, headers, body, _raw_headers = await _forward_upstream(

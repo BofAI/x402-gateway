@@ -9,13 +9,14 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from bankofai.x402_gateway.catalog.pay_assets import generate_pay_json
 from bankofai.x402_gateway.config.spec import EndpointSpec, ProviderSpec
 from bankofai.x402_gateway.server.metering import endpoint_price_options, endpoint_price_usd
 from bankofai.x402_gateway.server.payment import verify_payment_header
 from bankofai.x402_gateway.server.registry import ProviderRegistry
+from bankofai.x402_gateway.telemetry.metrics import MetricsStore
 
 router = APIRouter(prefix="/__402")
 
@@ -63,6 +64,14 @@ async def ready(request: Request) -> JSONResponse:
             "issues": issues,
         },
     )
+
+
+@router.get("/metrics")
+async def metrics(request: Request) -> PlainTextResponse:
+    store = getattr(request.app.state, "metrics", None)
+    if not isinstance(store, MetricsStore):
+        raise HTTPException(status_code=500, detail="metrics store is not configured")
+    return PlainTextResponse(store.to_prometheus(), media_type="text/plain; version=0.0.4")
 
 
 @router.get("/providers")

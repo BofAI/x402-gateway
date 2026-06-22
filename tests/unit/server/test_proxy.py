@@ -138,6 +138,12 @@ def test_management_endpoints(provider_yml_path) -> None:
         ready = client.get("/__402/ready")
         assert ready.status_code == 200
         assert ready.json()["status"] == "ready"
+        metrics = client.get("/__402/metrics")
+        assert metrics.status_code == 200
+        assert "x402_gateway_http_requests_total" in metrics.text
+        default_metrics = client.get("/metrics")
+        assert default_metrics.status_code == 200
+        assert "x402_gateway_http_requests_total" in default_metrics.text
         providers = client.get("/__402/providers").json()
         assert providers[0]["name"] == "acme-weather"
 
@@ -217,6 +223,12 @@ def test_metered_endpoint_returns_402_when_unpaid(provider_yml_path) -> None:
         assert header is not None
         decoded = json.loads(base64.b64decode(header).decode())
         assert decoded["x402Version"] == 2
+
+        metrics = client.get("/__402/metrics").text
+        assert (
+            'x402_gateway_payment_challenges_total{endpoint="/v1/current",'
+            'method="GET",provider="acme-weather"} 1'
+        ) in metrics
     finally:
         client.close()
 

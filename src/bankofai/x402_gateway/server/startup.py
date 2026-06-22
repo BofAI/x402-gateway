@@ -40,6 +40,7 @@ from bankofai.x402_gateway.server.recipient import (
 )
 from bankofai.x402_gateway.server.registry import ProviderRegistry
 from bankofai.x402_gateway.server.signer import SignerHandle, resolve_signer
+from bankofai.x402_gateway.telemetry.logging import log_event
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,13 @@ def collect_providers(
         seen.add(provider.name)
     if duplicate_names:
         raise StartupError(f"duplicate providers: {', '.join(sorted(duplicate_names))}")
+    log_event(
+        logger,
+        logging.INFO,
+        "gateway.startup.providers_collected",
+        provider_count=len(providers),
+        provider_names=[provider.name for provider in providers],
+    )
     return providers
 
 
@@ -132,6 +140,18 @@ async def _build_report(
         probe_facilitator_supported(facilitator_url),
         probe_balance(spec.operator.network, recipient.address),
     )
+    log_event(
+        logger,
+        logging.INFO if facilitator_report.reachable else logging.WARNING,
+        "gateway.startup.provider_resolved",
+        provider=resolved_spec.name,
+        network=resolved_spec.operator.network,
+        signer_origin=signer.origin,
+        signer_backend=signer.backend,
+        facilitator_reachable=facilitator_report.reachable,
+        facilitator_detail=facilitator_report.detail,
+        balance_status=balance_report.status if balance_report else None,
+    )
     return StartupReport(
         spec=resolved_spec,
         signer=signer,
@@ -167,6 +187,15 @@ async def load_registry(
         [report.spec for report in reports],
         signers,
         payment_statuses=payment_statuses,
+    )
+    log_event(
+        logger,
+        logging.INFO,
+        "gateway.startup.registry_loaded",
+        provider_count=len(reports),
+        facilitator_unreachable_count=sum(
+            1 for report in reports if not report.facilitator.reachable
+        ),
     )
 
     if print_banners:

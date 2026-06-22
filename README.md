@@ -55,8 +55,10 @@ Check the service:
 
 ```bash
 curl http://127.0.0.1:4020/__402/health
+curl http://127.0.0.1:4020/__402/ready
 curl http://127.0.0.1:4020/__402/providers
 curl http://127.0.0.1:4020/__402/endpoints
+curl http://127.0.0.1:4020/metrics
 ```
 
 Default local ports:
@@ -65,10 +67,10 @@ Default local ports:
 Gateway:      http://127.0.0.1:4020
 ```
 
-The default `.env.example` uses a placeholder facilitator URL:
+Set the facilitator URL and public gateway base URL for your environment:
 
 ```text
-X402_FACILITATOR_URL=https://admin-facilitator.bankofai.io/
+X402_FACILITATOR_URL=https://facilitator.example.com/
 X402_GATEWAY_PUBLIC_BASE_URL=http://host.docker.internal:4020
 ```
 
@@ -127,8 +129,10 @@ Check runtime state:
 ```bash
 docker compose ps
 curl http://127.0.0.1:4020/__402/health
+curl http://127.0.0.1:4020/__402/ready
 curl http://127.0.0.1:4020/__402/providers
 curl http://127.0.0.1:4020/__402/endpoints
+curl http://127.0.0.1:4020/metrics
 curl -i 'http://127.0.0.1:4020/providers/acme-weather/v1/current?city=Singapore'
 ```
 
@@ -139,9 +143,23 @@ that retries with a valid x402 payment header.
 
 ```text
 /__402/health      Liveness check
+/__402/ready       Readiness check for loaded providers and facilitator reachability
 /__402/providers   Loaded providers, signer status, and load errors
 /__402/endpoints   Loaded endpoint definitions and prices
+/__402/metrics     Prometheus metrics under the management namespace
+/metrics           Prometheus metrics on the conventional scrape path
 /__402/verify      Verify-only endpoint for local debugging
+```
+
+Prometheus can scrape the gateway directly:
+
+```yaml
+scrape_configs:
+  - job_name: x402-gateway
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - gateway:8080
 ```
 
 ## Client IP Forwarding
