@@ -138,6 +138,50 @@ async def test_probe_classifies_wrong_chain() -> None:
 
 
 @pytest.mark.asyncio
+async def test_probe_scans_all_accepts_before_rejecting() -> None:
+    from bankofai.x402.encoding import encode_payment_payload
+    from bankofai.x402.tokens import TokenRegistry
+    from bankofai.x402.types import PaymentRequired, PaymentRequirements
+
+    usdt = TokenRegistry.get_token("tron:mainnet", "USDT")
+    payment_required = PaymentRequired(
+        x402Version=2,
+        accepts=[
+            PaymentRequirements(
+                scheme="exact",
+                network="solana:mainnet",
+                amount="1000",
+                asset="So1aNaToken",
+                payTo="SolanaRecipient",
+            ),
+            PaymentRequirements(
+                scheme="exact_permit",
+                network="tron:mainnet",
+                amount="1000",
+                asset=usdt.address,
+                payTo="TRecipient",
+            ),
+        ],
+    )
+    header = encode_payment_payload(payment_required)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            402,
+            headers={"PAYMENT-REQUIRED": header},
+            json=payment_required.model_dump(by_alias=True, exclude_none=True),
+        )
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        result = await probe_endpoint(client, "https://gw.example.com/x", "GET", "/v1/foo")
+
+    assert result.status == ProbeStatus.OK
+    assert result.network == "tron:mainnet"
+    assert result.currency == "USDT"
+
+
+@pytest.mark.asyncio
 async def test_probe_classifies_free_when_2xx() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text="ok")

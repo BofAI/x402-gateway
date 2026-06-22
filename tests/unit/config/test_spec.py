@@ -57,7 +57,7 @@ def test_forward_url_shorthand_populates_routing() -> None:
     assert spec.routing.url == "https://upstream.example"
 
 
-def test_splits_must_reference_declared_recipient() -> None:
+def test_splits_are_rejected_until_payment_wire_format_supports_them() -> None:
     payload = _minimal_provider_dict()
     payload["endpoints"][0]["metering"] = {
         "dimensions": [
@@ -72,52 +72,49 @@ def test_splits_must_reference_declared_recipient() -> None:
             }
         ]
     }
-    with pytest.raises(ValueError, match="ghost"):
+    with pytest.raises(ValueError, match="splits are not supported"):
         ProviderSpec.model_validate(payload)
 
 
-def test_splits_with_known_recipient_validates() -> None:
+def test_endpoint_level_splits_are_rejected() -> None:
     payload = _minimal_provider_dict()
     payload["recipients"] = {"vendor": {"account": "TVendor"}}
     payload["endpoints"][0]["metering"] = {
+        "splits": [{"recipient": "vendor", "percent": 60}],
         "dimensions": [
             {
                 "unit": "requests",
-                "tiers": [
-                    {
-                        "price_usd": 0.01,
-                        "splits": [{"recipient": "vendor", "percent": 60}],
-                    }
-                ],
+                "tiers": [{"price_usd": 0.01}],
             }
         ]
     }
-    spec = ProviderSpec.model_validate(payload)
-    metering = spec.endpoints[0].metering
-    assert metering is not None
-    assert metering.dimensions[0].tiers[0].splits[0].recipient == "vendor"
+    with pytest.raises(ValueError, match="splits are not supported"):
+        ProviderSpec.model_validate(payload)
 
 
-def test_splits_sum_cannot_exceed_100() -> None:
+def test_variant_splits_are_rejected() -> None:
     payload = _minimal_provider_dict()
-    payload["recipients"] = {"a": {"account": "TA"}, "b": {"account": "TB"}}
+    payload["recipients"] = {"vendor": {"account": "TVendor"}}
     payload["endpoints"][0]["metering"] = {
-        "dimensions": [
+        "variants": [
             {
-                "unit": "requests",
-                "tiers": [
+                "param": "model",
+                "value": "pro",
+                "dimensions": [
                     {
-                        "price_usd": 0.01,
-                        "splits": [
-                            {"recipient": "a", "percent": 70},
-                            {"recipient": "b", "percent": 40},
+                        "unit": "requests",
+                        "tiers": [
+                            {
+                                "price_usd": 0.01,
+                                "splits": [{"recipient": "vendor", "percent": 60}],
+                            }
                         ],
                     }
                 ],
             }
         ]
     }
-    with pytest.raises(ValueError, match="exceeds 100"):
+    with pytest.raises(ValueError, match="splits are not supported"):
         ProviderSpec.model_validate(payload)
 
 

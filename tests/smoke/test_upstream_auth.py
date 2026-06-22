@@ -266,6 +266,9 @@ async def test_client_authorization_header_never_reaches_upstream() -> None:
         "x-payment": "v1-format",
         "PAYMENT-REQUIRED": "should-not-leak",
         "x-payment-required": "v1-form",
+        "cookie": "session=client",
+        "x-api-key": "client-api-key",
+        "api-key": "client-api-key",
         "content-type": "application/json",
         "user-agent": "smoke-test",
     }
@@ -277,6 +280,9 @@ async def test_client_authorization_header_never_reaches_upstream() -> None:
     assert "x-payment" not in {k.lower() for k in filtered}
     assert "payment-required" not in {k.lower() for k in filtered}
     assert "x-payment-required" not in {k.lower() for k in filtered}
+    assert "cookie" not in {k.lower() for k in filtered}
+    assert "x-api-key" not in {k.lower() for k in filtered}
+    assert "api-key" not in {k.lower() for k in filtered}
 
     # Non-sensitive headers should pass through
     assert "content-type" in {k.lower() for k in filtered}

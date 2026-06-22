@@ -14,8 +14,9 @@ Pipeline (see gateway.md §2.4):
 
 from __future__ import annotations
 
+import json
 import logging
-from urllib.parse import urljoin
+from urllib.parse import parse_qsl, urljoin
 
 import httpx
 from bankofai.x402.encoding import encode_payment_payload
@@ -47,6 +48,12 @@ STRIP_REQUEST_HEADERS = frozenset(
         "transfer-encoding",
         "authorization",
         "proxy-authorization",
+        "cookie",
+        "x-api-key",
+        "api-key",
+        "apikey",
+        "x-auth-token",
+        "x-access-token",
         "x-payment",
         "payment-signature",
         "x-payment-required",
@@ -142,9 +149,32 @@ def upstream_url(base_url: str, path: str) -> str:
     return urljoin(base_url.rstrip("/") + "/", path.lstrip("/"))
 
 
-def _request_params(request: Request) -> dict[str, str]:
+def _scalar_params_from_json(value: object) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    params: dict[str, str] = {}
+    for key, item in value.items():
+        if isinstance(item, str | int | float | bool):
+            params[str(key)] = str(item)
+    return params
+
+
+def _request_params(request: Request, body: bytes = b"") -> dict[str, str]:
     """Flat key->value dict used for metering variant selection."""
-    return {k: v for k, v in request.query_params.items()}
+    params = {k: v for k, v in request.query_params.items()}
+    if not body:
+        return params
+
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    try:
+        if content_type == "application/json":
+            params.update(_scalar_params_from_json(json.loads(body.decode("utf-8"))))
+        elif content_type == "application/x-www-form-urlencoded":
+            form_params = parse_qsl(body.decode("utf-8"), keep_blank_values=True)
+            params.update({k: v for k, v in form_params})
+    except (UnicodeDecodeError, ValueError, TypeError):
+        logger.debug("could not parse request body for metering variant selection", exc_info=True)
+    return params
 
 
 def _payment_required_response(payment_required: PaymentRequired) -> JSONResponse:
@@ -249,14 +279,17 @@ async def proxy(provider_name: str, path: str, request: Request) -> Response:
         # endpoints[] is an allowlist (gateway.md §2.2): unknown paths are 404
         raise HTTPException(status_code=404, detail="endpoint not in allowlist")
 
-    request_params = _request_params(request)
+    body_bytes = await request.body()
+    request_params = _request_params(request, body_bytes)
     target_path = "/" + path.lstrip("/")
 
     # Free endpoint -> respond mode short-circuit or proxy forward
     if endpoint.metering is None:
         if entry.spec.routing.type == "respond":
             return JSONResponse(content={"status": "ok", "endpoint": endpoint.path})
-        status, headers, body, _ = await _forward_upstream(entry, request, target_path)
+        status, headers, body, _ = await _forward_upstream(
+            entry, request, target_path, body=body_bytes
+        )
         return FastAPIResponse(content=body, status_code=status, headers=headers)
 
     payment_header = request.headers.get(PAYMENT_SIGNATURE_HEADER)
@@ -318,7 +351,7 @@ async def proxy(provider_name: str, path: str, request: Request) -> Response:
 
     # Forward upstream and attach PAYMENT-RESPONSE
     status, headers, body, _raw_headers = await _forward_upstream(
-        entry, request, target_path
+        entry, request, target_path, body=body_bytes
     )
     headers[PAYMENT_RESPONSE_HEADER] = encode_payment_payload(
         settle_response.model_dump(by_alias=True)

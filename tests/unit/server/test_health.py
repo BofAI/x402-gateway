@@ -86,6 +86,27 @@ async def test_balance_probe_classifies_zero(monkeypatch: pytest.MonkeyPatch) ->
 
 
 @pytest.mark.asyncio
+async def test_balance_probe_soft_fails_on_invalid_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="not-json")
+
+    transport = httpx.MockTransport(handler)
+    original_init = httpx.AsyncClient.__init__
+
+    def patched_init(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        kwargs.setdefault("transport", transport)
+        return original_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(httpx.AsyncClient, "__init__", patched_init)
+
+    report = await probe_balance("tron:mainnet", "TBadJson")
+    assert report.severity == "unknown"
+    assert report.display == "?"
+
+
+@pytest.mark.asyncio
 async def test_balance_probe_classifies_ok_for_funded_tron(monkeypatch: pytest.MonkeyPatch) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"balance": 200_000_000})  # 200 TRX

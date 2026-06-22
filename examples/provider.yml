@@ -59,9 +59,6 @@ endpoints:
           scale: 1
           tiers:
             - price_usd: 0.002
-              splits:
-                - recipient: vendor
-                  percent: 70
 
   - method: GET
     path: /health

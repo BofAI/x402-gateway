@@ -36,7 +36,7 @@ operator:
   scheme: exact_permit
   # facilitator_url: https://facilitator.bankofai.io  # uncomment in prod
 
-# Optional: declare named recipients so endpoints can split payments
+# Optional: declare named recipients for operator.recipient aliases
 # recipients:
 #   vendor:
 #     account: "TVendorWallet"

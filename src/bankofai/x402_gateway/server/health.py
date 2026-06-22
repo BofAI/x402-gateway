@@ -93,7 +93,7 @@ async def probe_balance(network: str, address: str) -> BalanceReport:
             return await _probe_tron_balance(network, address)
         if network.startswith("eip155:"):
             return await _probe_evm_balance(network, address)
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, ValueError, TypeError) as exc:
         return BalanceReport(
             network=network,
             address=address,

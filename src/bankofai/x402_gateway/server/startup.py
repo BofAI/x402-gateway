@@ -34,6 +34,7 @@ from bankofai.x402_gateway.server.health import (
     probe_facilitator_supported,
 )
 from bankofai.x402_gateway.server.recipient import (
+    RecipientNotConfigured,
     RecipientResolution,
     resolve_recipient,
 )
@@ -92,6 +93,22 @@ def collect_providers(
     return providers
 
 
+def validate_provider_runtime_config(
+    providers: list[ProviderSpec],
+    *,
+    sandbox: bool,
+    profile: Optional[str],
+) -> None:
+    for spec in providers:
+        try:
+            signer = resolve_signer(spec, sandbox=sandbox, profile=profile)
+            resolve_recipient(spec, signer)
+        except RecipientNotConfigured as exc:
+            raise StartupError(f"{spec.name}: {exc}") from exc
+        except Exception as exc:
+            raise StartupError(f"{spec.name}: failed to resolve signer/recipient: {exc}") from exc
+
+
 async def _build_report(
     spec: ProviderSpec,
     *,
@@ -99,14 +116,24 @@ async def _build_report(
     profile: Optional[str],
 ) -> StartupReport:
     signer = resolve_signer(spec, sandbox=sandbox, profile=profile)
-    recipient = resolve_recipient(spec, signer)
+    try:
+        recipient = resolve_recipient(spec, signer)
+    except RecipientNotConfigured as exc:
+        raise StartupError(str(exc)) from exc
+    resolved_spec = spec.model_copy(
+        update={
+            "operator": spec.operator.model_copy(
+                update={"recipient": recipient.address}
+            )
+        }
+    )
     facilitator_url = spec.operator.facilitator_url
     facilitator_report, balance_report = await asyncio.gather(
         probe_facilitator_supported(facilitator_url),
         probe_balance(spec.operator.network, recipient.address),
     )
     return StartupReport(
-        spec=spec,
+        spec=resolved_spec,
         signer=signer,
         recipient=recipient,
         facilitator=facilitator_report,
@@ -172,7 +199,8 @@ def build_app(
 
     # Validate eagerly: we want the CLI to fail before uvicorn even binds the
     # socket, so a typo in provider.yml doesn't leave a half-running gateway.
-    collect_providers(provider_yml, providers_dir)
+    providers = collect_providers(provider_yml, providers_dir)
+    validate_provider_runtime_config(providers, sandbox=sandbox, profile=profile)
 
     registry = ProviderRegistry()
     app = create_app(registry)

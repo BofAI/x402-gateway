@@ -259,22 +259,22 @@ class ProviderSpec(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def validate_splits_reference_recipients(self) -> "ProviderSpec":
+    def reject_unsupported_splits(self) -> "ProviderSpec":
         for endpoint in self.endpoints:
             metering = endpoint.metering
             if metering is None:
                 continue
-            self._check_splits(metering.splits, label=f"{endpoint.method} {endpoint.path}")
+            self._check_no_splits(metering.splits, label=f"{endpoint.method} {endpoint.path}")
             for dim in metering.dimensions:
                 for tier in dim.tiers:
-                    self._check_splits(
+                    self._check_no_splits(
                         tier.splits,
                         label=f"{endpoint.method} {endpoint.path} tier",
                     )
             for variant in metering.variants:
                 for dim in variant.dimensions:
                     for tier in dim.tiers:
-                        self._check_splits(
+                        self._check_no_splits(
                             tier.splits,
                             label=(
                                 f"{endpoint.method} {endpoint.path} "
@@ -283,15 +283,9 @@ class ProviderSpec(BaseModel):
                         )
         return self
 
-    def _check_splits(self, splits: list[SplitSpec], *, label: str) -> None:
+    def _check_no_splits(self, splits: list[SplitSpec], *, label: str) -> None:
         if not splits:
             return
-        total = sum(s.percent for s in splits)
-        if total > 100.0 + 1e-6:
-            raise ValueError(f"{label}: splits sum {total}% exceeds 100%")
-        for split in splits:
-            if split.recipient not in self.recipients:
-                raise ValueError(
-                    f"{label}: split recipient '{split.recipient}' "
-                    f"not declared in `recipients`"
-                )
+        raise ValueError(
+            f"{label}: splits are not supported by the current x402 payment wire format"
+        )

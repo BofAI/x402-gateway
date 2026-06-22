@@ -46,24 +46,28 @@ class ProbeResult:
 
 
 def _classify_402(payment_required: PaymentRequired) -> ProbeResult:
+    wrong_chain: ProbeResult | None = None
+    wrong_currency: ProbeResult | None = None
     for accepts in payment_required.accepts:
         if not any(accepts.network.startswith(prefix) for prefix in ALLOWED_NETWORK_PREFIXES):
-            return ProbeResult(
+            wrong_chain = wrong_chain or ProbeResult(
                 status=ProbeStatus.WRONG_CHAIN,
                 method="",
                 path="",
                 network=accepts.network,
             )
+            continue
         token = TokenRegistry.find_by_address(accepts.network, accepts.asset)
         symbol = token.symbol if token else None
         if symbol is None or symbol.upper() not in ALLOWED_CURRENCIES:
-            return ProbeResult(
+            wrong_currency = wrong_currency or ProbeResult(
                 status=ProbeStatus.WRONG_CURRENCY,
                 method="",
                 path="",
                 network=accepts.network,
                 currency=symbol,
             )
+            continue
         return ProbeResult(
             status=ProbeStatus.OK,
             method="",
@@ -72,6 +76,10 @@ def _classify_402(payment_required: PaymentRequired) -> ProbeResult:
             currency=symbol,
             amount_raw=accepts.amount,
         )
+    if wrong_currency is not None:
+        return wrong_currency
+    if wrong_chain is not None:
+        return wrong_chain
     return ProbeResult(status=ProbeStatus.UNKNOWN_PROTOCOL, method="", path="")
 
 

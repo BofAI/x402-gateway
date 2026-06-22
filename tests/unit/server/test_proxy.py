@@ -207,6 +207,40 @@ def test_metered_endpoint_attaches_facilitator_fee_quote(provider_yml_path) -> N
         client.close()
 
 
+def test_metered_variant_can_match_json_body_param(
+    provider_yml_path, tmp_path
+) -> None:
+    provider_text = provider_yml_path.read_text()
+    provider_text += """
+  - method: POST
+    path: /v1/chat
+    metering:
+      dimensions:
+        - unit: requests
+          tiers:
+            - price_usd: 0.01
+      variants:
+        - param: model
+          value: pro
+          dimensions:
+            - unit: requests
+              tiers:
+                - price_usd: 0.10
+"""
+    provider_path = tmp_path / "provider.yml"
+    provider_path.write_text(provider_text)
+    client, _, _ = _build_test_client(provider_path)
+    try:
+        response = client.post(
+            "/providers/acme-weather/v1/chat",
+            json={"model": "pro", "messages": []},
+        )
+        assert response.status_code == 402
+        assert response.json()["accepts"][0]["amount"] == "100000"
+    finally:
+        client.close()
+
+
 def test_unknown_path_returns_404(provider_yml_path) -> None:
     client, _, _ = _build_test_client(provider_yml_path)
     try:

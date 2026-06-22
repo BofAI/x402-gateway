@@ -64,6 +64,24 @@ def test_build_payment_requirements_includes_amount_in_smallest_units() -> None:
     assert requirements[0].network == "tron:mainnet"
 
 
+def test_build_payment_requirements_rounds_positive_amount_up() -> None:
+    spec = _spec()
+    requirements = build_payment_requirements_for_price(spec, 0.0000001)
+    assert len(requirements) == 1
+    assert requirements[0].amount == "1"
+
+
+def test_build_payment_requirements_resolves_recipient_alias() -> None:
+    payload = _spec().model_dump()
+    payload["operator"]["recipient"] = "vendor"
+    payload["recipients"] = {"vendor": {"account": "TVendorWallet"}}
+    spec = ProviderSpec.model_validate(payload)
+
+    requirements = build_payment_requirements_for_price(spec, 0.01)
+
+    assert requirements[0].pay_to == "TVendorWallet"
+
+
 def test_payment_required_carries_v2_protocol() -> None:
     spec = _spec()
     payment_required = build_payment_required(spec, spec.endpoints[0])

@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from decimal import Decimal
+from decimal import ROUND_CEILING, Decimal
 from typing import Optional
 
 from bankofai.x402.encoding import decode_payment_payload, encode_payment_payload
@@ -57,7 +57,18 @@ def build_resource_url(provider_name: str, endpoint: EndpointSpec) -> str:
 
 
 def _usd_to_smallest_unit(price_usd: float, decimals: int) -> int:
-    return int(Decimal(str(price_usd)) * (Decimal(10) ** decimals))
+    return int(
+        (Decimal(str(price_usd)) * (Decimal(10) ** decimals)).to_integral_value(
+            rounding=ROUND_CEILING
+        )
+    )
+
+
+def _payment_recipient(provider: ProviderSpec) -> str:
+    recipient = provider.operator.recipient.strip() if provider.operator.recipient else ""
+    if recipient in provider.recipients:
+        return provider.recipients[recipient].account
+    return recipient
 
 
 def build_payment_requirements_for_price(
@@ -72,13 +83,17 @@ def build_payment_requirements_for_price(
     for symbol in provider_currency_symbols(provider):
         token = TokenRegistry.get_token(provider.operator.network, symbol)
         amount = _usd_to_smallest_unit(price_usd, token.decimals)
+        if amount <= 0:
+            raise ValueError(
+                f"positive price {price_usd} USD is below the smallest unit for {symbol}"
+            )
         requirements.append(
             PaymentRequirements(
                 scheme=provider.operator.scheme,
                 network=provider.operator.network,
                 amount=str(amount),
                 asset=token.address,
-                payTo=provider.operator.recipient,
+                payTo=_payment_recipient(provider),
                 maxTimeoutSeconds=provider.operator.valid_for_seconds,
             )
         )
