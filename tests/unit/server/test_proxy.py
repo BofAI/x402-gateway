@@ -135,6 +135,9 @@ def test_management_endpoints(provider_yml_path) -> None:
     client, _, _ = _build_test_client(provider_yml_path)
     try:
         assert client.get("/__402/health").json() == "ok"
+        ready = client.get("/__402/ready")
+        assert ready.status_code == 200
+        assert ready.json()["status"] == "ready"
         providers = client.get("/__402/providers").json()
         assert providers[0]["name"] == "acme-weather"
 
@@ -142,6 +145,38 @@ def test_management_endpoints(provider_yml_path) -> None:
         assert endpoints[0]["gatewayPath"] == "/providers/acme-weather/v1/current"
         assert endpoints[0]["metered"] is True
         assert endpoints[1]["metered"] is False
+    finally:
+        client.close()
+
+
+def test_readiness_fails_when_no_providers_loaded() -> None:
+    client = TestClient(create_app(ProviderRegistry()))
+    try:
+        response = client.get("/__402/ready")
+        assert response.status_code == 503
+        body = response.json()
+        assert body["status"] == "not_ready"
+        assert body["issues"][0]["reason"] == "no providers loaded"
+    finally:
+        client.close()
+
+
+def test_readiness_fails_when_facilitator_unreachable(provider_yml_path) -> None:
+    registry = ProviderRegistry()
+
+    async def setup() -> None:
+        spec = load_provider_file(provider_yml_path)
+        await registry.replace_all(
+            [spec],
+            payment_statuses={spec.name: "unreachable"},
+        )
+
+    asyncio.run(setup())
+    client = TestClient(create_app(registry))
+    try:
+        response = client.get("/__402/ready")
+        assert response.status_code == 503
+        assert response.json()["issues"][0]["reason"] == "facilitator unreachable"
     finally:
         client.close()
 

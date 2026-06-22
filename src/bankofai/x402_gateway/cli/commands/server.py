@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -9,6 +10,7 @@ import typer
 
 from bankofai.x402_gateway.cli.templates import write_provider_template
 from bankofai.x402_gateway.server.startup import StartupError, build_app
+from bankofai.x402_gateway.telemetry.logging import configure_logging
 
 app = typer.Typer(help="Run the gateway server")
 
@@ -52,6 +54,9 @@ def start(
     except ImportError as exc:  # pragma: no cover
         raise typer.BadParameter("uvicorn is required to run the gateway server") from exc
 
+    log_level = os.environ.get("X402_GATEWAY_LOG_LEVEL", "info")
+    configure_logging(log_level)
+
     try:
         app_obj = build_app(
             provider_yml,
@@ -67,7 +72,7 @@ def start(
         typer.secho(f"x402-gateway: startup failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
 
-    uvicorn.run(app_obj, host=host, port=port)
+    uvicorn.run(app_obj, host=host, port=port, log_level=log_level.lower())
 
 
 @app.command()

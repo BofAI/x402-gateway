@@ -119,12 +119,18 @@ class ProviderRegistry:
         self,
         providers: list[ProviderSpec],
         signers: dict[str, SignerHandle] | None = None,
+        payment_statuses: dict[str, str] | None = None,
     ) -> None:
         signers = signers or {}
+        payment_statuses = payment_statuses or {}
         entries = {
             provider.name: self._build_entry(provider, signers.get(provider.name))
             for provider in providers
         }
+        for name, status in payment_statuses.items():
+            entry = entries.get(name)
+            if entry is not None:
+                entry.state.payment_status = status
         async with self._lock:
             self._entries = entries
 

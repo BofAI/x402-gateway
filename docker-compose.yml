@@ -16,29 +16,28 @@ services:
       X402_GATEWAY_LOG_LEVEL: ${X402_GATEWAY_LOG_LEVEL:-info}
       X402_GATEWAY_PUBLIC_BASE_URL: ${X402_GATEWAY_PUBLIC_BASE_URL:-http://host.docker.internal:4020}
       X402_FACILITATOR_URL: ${X402_FACILITATOR_URL:-https://facilitator.example.com}
-      BANKOFAI_API_KEY: ${BANKOFAI_API_KEY:-change-me}
+      BANKOFAI_API_KEY: ${BANKOFAI_API_KEY:-}
     ports:
       - "${X402_GATEWAY_PORT:-4020}:8080"
     volumes:
       - ./providers:${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}:ro
-      - ./log:/app/log
     command:
-      - sh
-      - -c
-      - >
-        mkdir -p /app/log &&
-        x402-gateway server start
-        --providers-dir ${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}
-        --host 0.0.0.0
-        --port 8080
-        --quiet
-        2>&1 | tee -a /app/log/gateway.log
+      - x402-gateway
+      - server
+      - start
+      - --providers-dir
+      - ${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --quiet
     healthcheck:
       test:
         - CMD-SHELL
         - >
           python -c "import urllib.request;
-          urllib.request.urlopen('http://127.0.0.1:8080/__402/health', timeout=3).read()"
+          urllib.request.urlopen('http://127.0.0.1:8080/__402/ready', timeout=3).read()"
       interval: 30s
       timeout: 5s
       retries: 3

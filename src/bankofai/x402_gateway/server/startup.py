@@ -159,7 +159,15 @@ async def load_registry(
         reports.append(report)
 
     signers = {report.spec.name: report.signer for report in reports}
-    await registry.replace_all(providers, signers)
+    payment_statuses = {
+        report.spec.name: "ok" if report.facilitator.reachable else "unreachable"
+        for report in reports
+    }
+    await registry.replace_all(
+        [report.spec for report in reports],
+        signers,
+        payment_statuses=payment_statuses,
+    )
 
     if print_banners:
         from rich.console import Console

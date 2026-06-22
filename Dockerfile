@@ -30,4 +30,7 @@ USER x402-gateway
 
 EXPOSE 8080
 
-CMD ["sh", "-c", "mkdir -p /app/log && x402-gateway server start --providers-dir /app/providers --host 0.0.0.0 --port 8080 --quiet 2>&1 | tee -a /app/log/gateway.log"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/__402/ready', timeout=3).read()"
+
+CMD ["x402-gateway", "server", "start", "--providers-dir", "/app/providers", "--host", "0.0.0.0", "--port", "8080", "--quiet"]

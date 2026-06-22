@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from bankofai.x402_gateway.catalog.pay_assets import generate_pay_json
 from bankofai.x402_gateway.config.spec import EndpointSpec, ProviderSpec
@@ -29,6 +30,39 @@ def get_registry(request: Request) -> ProviderRegistry:
 @router.get("/health")
 async def health() -> str:
     return "ok"
+
+
+@router.get("/ready")
+async def ready(request: Request) -> JSONResponse:
+    registry = get_registry(request)
+    specs = registry.snapshot()
+    states = registry.state_snapshot()
+    issues: list[dict[str, str | None]] = []
+
+    if not specs:
+        issues.append({"provider": None, "reason": "no providers loaded"})
+
+    for name in specs:
+        state = states.get(name)
+        if state is None:
+            issues.append({"provider": name, "reason": "missing runtime state"})
+            continue
+        if state.config_status != "loaded":
+            issues.append({"provider": name, "reason": f"config {state.config_status}"})
+        if state.last_error:
+            issues.append({"provider": name, "reason": state.last_error})
+        if state.payment_status == "unreachable":
+            issues.append({"provider": name, "reason": "facilitator unreachable"})
+
+    status_code = 200 if not issues else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "ready" if not issues else "not_ready",
+            "provider_count": len(specs),
+            "issues": issues,
+        },
+    )
 
 
 @router.get("/providers")
