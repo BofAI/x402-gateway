@@ -151,12 +151,26 @@ that retries with a valid x402 payment header.
 /__402/verify      Verify-only endpoint for local debugging
 ```
 
-Prometheus can scrape the gateway directly:
+`/__402/health` and `/__402/ready` are public so container health checks can use
+them. Other `/__402/*` endpoints and `/metrics` are treated as operational APIs:
+private-network and loopback clients can use them, public clients are rejected
+unless `X402_GATEWAY_ADMIN_TOKEN` is configured and supplied.
+
+```bash
+export X402_GATEWAY_ADMIN_TOKEN='replace-with-a-long-random-token'
+curl -H "Authorization: Bearer $X402_GATEWAY_ADMIN_TOKEN" \
+  http://127.0.0.1:4020/__402/providers
+```
+
+Prometheus can scrape the gateway directly with a bearer token:
 
 ```yaml
 scrape_configs:
   - job_name: x402-gateway
     metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials: replace-with-a-long-random-token
     static_configs:
       - targets:
           - gateway:8080
@@ -189,6 +203,10 @@ sets `x-forwarded-for` to that value before forwarding upstream.
 - Do not store bearer tokens or private upstream URLs in public examples.
 - Put the gateway behind TLS in production.
 - Configure the production facilitator URL explicitly.
+- Set `X402_GATEWAY_ADMIN_TOKEN` in production or block `/__402/*` and `/metrics`
+  at the reverse proxy except for trusted operations networks.
+- Do not set `X402_GATEWAY_ADMIN_ALLOW_PUBLIC=true` in production unless another
+  authenticated control plane protects the gateway.
 
 ## Useful Commands
 

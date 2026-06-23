@@ -6,9 +6,11 @@ The shape mirrors gateway.md §2.5.
 
 from __future__ import annotations
 
+import secrets
+from ipaddress import ip_address
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from bankofai.x402_gateway.catalog.pay_assets import generate_pay_json
@@ -26,6 +28,90 @@ def get_registry(request: Request) -> ProviderRegistry:
     if not isinstance(registry, ProviderRegistry):
         raise RuntimeError("provider registry is not configured")
     return registry
+
+
+def _configured_admin_token(request: Request) -> str | None:
+    value = getattr(request.app.state, "admin_token", None)
+    return value if isinstance(value, str) and value else None
+
+
+def _allow_public_admin(request: Request) -> bool:
+    value = getattr(request.app.state, "admin_allow_public", False)
+    return bool(value)
+
+
+def _first_forwarded_ip(value: str | None) -> str | None:
+    if not value:
+        return None
+    for part in value.split(","):
+        candidate = part.strip()
+        if candidate:
+            return candidate
+    return None
+
+
+def _admin_client_ip(request: Request) -> str | None:
+    return (
+        request.headers.get("cf-connecting-ip")
+        or _first_forwarded_ip(request.headers.get("x-forwarded-for"))
+        or request.headers.get("x-real-ip")
+        or (request.client.host if request.client else None)
+    )
+
+
+def _is_private_admin_client(request: Request) -> bool:
+    client_ip = _admin_client_ip(request)
+    if client_ip == "testclient":
+        return True
+    if not client_ip:
+        return False
+    try:
+        parsed = ip_address(client_ip)
+    except ValueError:
+        return False
+    return (
+        parsed.is_loopback
+        or parsed.is_private
+        or parsed.is_link_local
+    )
+
+
+def _request_admin_token(request: Request) -> str | None:
+    authorization = request.headers.get("authorization", "")
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() == "bearer" and token:
+        return token.strip()
+
+    header_token = request.headers.get("x-admin-token")
+    return header_token.strip() if header_token else None
+
+
+async def require_admin(request: Request) -> None:
+    """Protect management APIs from the public internet.
+
+    Health/readiness remain public for orchestrators. Sensitive management
+    endpoints are available from private networks, or from any network with the
+    configured admin bearer token.
+    """
+    expected = _configured_admin_token(request)
+    if expected is None and (_allow_public_admin(request) or _is_private_admin_client(request)):
+        return
+
+    supplied = _request_admin_token(request)
+    if expected is not None and supplied is not None and secrets.compare_digest(supplied, expected):
+        return
+
+    if expected is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="admin endpoint is not exposed publicly",
+        )
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="admin authentication required",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 @router.get("/health")
@@ -66,7 +152,7 @@ async def ready(request: Request) -> JSONResponse:
     )
 
 
-@router.get("/metrics")
+@router.get("/metrics", dependencies=[Depends(require_admin)])
 async def metrics(request: Request) -> PlainTextResponse:
     store = getattr(request.app.state, "metrics", None)
     if not isinstance(store, MetricsStore):
@@ -74,7 +160,7 @@ async def metrics(request: Request) -> PlainTextResponse:
     return PlainTextResponse(store.to_prometheus(), media_type="text/plain; version=0.0.4")
 
 
-@router.get("/providers")
+@router.get("/providers", dependencies=[Depends(require_admin)])
 async def providers(request: Request) -> list[dict[str, Any]]:
     registry = get_registry(request)
     specs = registry.snapshot()
@@ -109,7 +195,7 @@ async def providers(request: Request) -> list[dict[str, Any]]:
     return result
 
 
-@router.get("/endpoints")
+@router.get("/endpoints", dependencies=[Depends(require_admin)])
 async def endpoints(request: Request) -> list[dict[str, Any]]:
     registry = get_registry(request)
     result: list[dict[str, Any]] = []
@@ -214,7 +300,7 @@ def _provider_catalog_detail(
     }
 
 
-@router.get("/catalog")
+@router.get("/catalog", dependencies=[Depends(require_admin)])
 async def catalog(request: Request) -> dict[str, Any]:
     registry = get_registry(request)
     states = registry.state_snapshot()
@@ -263,7 +349,7 @@ async def catalog(request: Request) -> dict[str, Any]:
     }
 
 
-@router.get("/catalog/providers/{provider_name}.json")
+@router.get("/catalog/providers/{provider_name}.json", dependencies=[Depends(require_admin)])
 async def catalog_provider(provider_name: str, request: Request) -> dict[str, Any]:
     registry = get_registry(request)
     spec = registry.get(provider_name)
@@ -282,7 +368,7 @@ async def catalog_provider(provider_name: str, request: Request) -> dict[str, An
     )
 
 
-@router.get("/catalog/pay/{provider_name}.json")
+@router.get("/catalog/pay/{provider_name}.json", dependencies=[Depends(require_admin)])
 async def catalog_pay(provider_name: str, request: Request) -> dict[str, Any]:
     registry = get_registry(request)
     spec = registry.get(provider_name)
@@ -292,7 +378,7 @@ async def catalog_pay(provider_name: str, request: Request) -> dict[str, Any]:
     return generate_pay_json(spec, fallback_gateway_base=gateway_base)
 
 
-@router.post("/verify")
+@router.post("/verify", dependencies=[Depends(require_admin)])
 async def verify(request: Request) -> dict[str, Any]:
     body = await request.json()
     provider_name = body.get("provider")

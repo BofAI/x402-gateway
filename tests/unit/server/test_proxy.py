@@ -163,6 +163,48 @@ def test_management_endpoints(provider_yml_path) -> None:
         client.close()
 
 
+def test_management_endpoints_require_admin_token_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("X402_GATEWAY_ADMIN_TOKEN", "admin-secret")
+    client = TestClient(create_app(ProviderRegistry()))
+    try:
+        assert client.get("/__402/health").status_code == 200
+        assert client.get("/__402/ready").status_code == 503
+
+        for path in ("/__402/providers", "/__402/endpoints", "/__402/metrics", "/metrics"):
+            response = client.get(path)
+            assert response.status_code == 401
+            assert response.headers["www-authenticate"] == "Bearer"
+
+        assert (
+            client.get(
+                "/__402/providers",
+                headers={"Authorization": "Bearer admin-secret"},
+            ).status_code
+            == 200
+        )
+        assert (
+            client.get("/metrics", headers={"X-Admin-Token": "admin-secret"}).status_code
+            == 200
+        )
+    finally:
+        client.close()
+
+
+def test_management_endpoints_reject_public_clients_without_token() -> None:
+    client = TestClient(create_app(ProviderRegistry()))
+    try:
+        response = client.get(
+            "/__402/providers",
+            headers={"X-Forwarded-For": "8.8.8.8"},
+        )
+        assert response.status_code == 403
+        assert response.json()["detail"] == "admin endpoint is not exposed publicly"
+    finally:
+        client.close()
+
+
 def test_readiness_fails_when_no_providers_loaded() -> None:
     client = TestClient(create_app(ProviderRegistry()))
     try:

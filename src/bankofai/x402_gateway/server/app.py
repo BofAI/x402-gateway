@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from collections.abc import Awaitable, Callable
 from uuid import uuid4
@@ -10,6 +11,7 @@ from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse, Response
 
+from bankofai.x402_gateway.server.admin import require_admin
 from bankofai.x402_gateway.server.admin import router as admin_router
 from bankofai.x402_gateway.server.proxy import router as proxy_router
 from bankofai.x402_gateway.server.registry import ProviderRegistry
@@ -23,9 +25,15 @@ def create_app(registry: ProviderRegistry | None = None) -> FastAPI:
     app = FastAPI(title="x402-gateway")
     app.state.provider_registry = registry or ProviderRegistry()
     app.state.metrics = MetricsStore()
+    app.state.admin_token = os.environ.get("X402_GATEWAY_ADMIN_TOKEN")
+    app.state.admin_allow_public = (
+        os.environ.get("X402_GATEWAY_ADMIN_ALLOW_PUBLIC", "").lower()
+        in {"1", "true", "yes"}
+    )
 
     @app.get("/metrics", include_in_schema=False)
-    async def prometheus_metrics() -> PlainTextResponse:
+    async def prometheus_metrics(request: Request) -> PlainTextResponse:
+        await require_admin(request)
         store = app.state.metrics
         return PlainTextResponse(store.to_prometheus(), media_type="text/plain; version=0.0.4")
 

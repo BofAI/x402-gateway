@@ -116,6 +116,7 @@ Required inputs:
 ```text
 X402_FACILITATOR_URL
 X402_GATEWAY_PUBLIC_BASE_URL
+X402_GATEWAY_ADMIN_TOKEN
 operator.recipient in provider.yml
 wallet funds for the selected network
 accepted token balance for the selected network
@@ -126,6 +127,8 @@ Example `.env`:
 ```bash
 X402_GATEWAY_PUBLIC_BASE_URL=https://gateway.example.com
 X402_FACILITATOR_URL=https://facilitator.example.com
+X402_GATEWAY_ADMIN_TOKEN=replace-with-a-long-random-token
+X402_GATEWAY_ADMIN_ALLOW_PUBLIC=false
 X402_GATEWAY_PORT=4020
 ```
 
@@ -182,6 +185,33 @@ Nginx example:
 server {
     listen 443 ssl;
     server_name gateway.example.com;
+
+    location = /__402/health {
+        proxy_pass http://127.0.0.1:4020;
+    }
+
+    location = /__402/ready {
+        proxy_pass http://127.0.0.1:4020;
+    }
+
+    # Restrict operational APIs to trusted networks. If these endpoints must be
+    # reachable by Prometheus or operators, require X402_GATEWAY_ADMIN_TOKEN and
+    # send it as `Authorization: Bearer <token>`.
+    location ^~ /__402/ {
+        allow 10.0.0.0/8;
+        allow 172.16.0.0/12;
+        allow 192.168.0.0/16;
+        deny all;
+        proxy_pass http://127.0.0.1:4020;
+    }
+
+    location = /metrics {
+        allow 10.0.0.0/8;
+        allow 172.16.0.0/12;
+        allow 192.168.0.0/16;
+        deny all;
+        proxy_pass http://127.0.0.1:4020;
+    }
 
     location / {
         proxy_pass http://127.0.0.1:4020;
