@@ -193,14 +193,27 @@ def test_management_endpoints_require_admin_token_when_configured(
 
 
 def test_management_endpoints_reject_public_clients_without_token() -> None:
-    client = TestClient(create_app(ProviderRegistry()))
+    client = TestClient(create_app(ProviderRegistry()), client=("8.8.8.8", 50000))
+    try:
+        response = client.get("/__402/providers")
+        assert response.status_code == 403
+        assert response.json()["detail"] == "admin endpoint is not exposed publicly"
+    finally:
+        client.close()
+
+
+def test_management_endpoints_ignore_forged_forwarded_headers() -> None:
+    client = TestClient(create_app(ProviderRegistry()), client=("127.0.0.1", 50000))
     try:
         response = client.get(
             "/__402/providers",
-            headers={"X-Forwarded-For": "8.8.8.8"},
+            headers={
+                "CF-Connecting-IP": "8.8.8.8",
+                "X-Forwarded-For": "8.8.8.8",
+                "X-Real-IP": "8.8.8.8",
+            },
         )
-        assert response.status_code == 403
-        assert response.json()["detail"] == "admin endpoint is not exposed publicly"
+        assert response.status_code == 200
     finally:
         client.close()
 

@@ -40,23 +40,8 @@ def _allow_public_admin(request: Request) -> bool:
     return bool(value)
 
 
-def _first_forwarded_ip(value: str | None) -> str | None:
-    if not value:
-        return None
-    for part in value.split(","):
-        candidate = part.strip()
-        if candidate:
-            return candidate
-    return None
-
-
 def _admin_client_ip(request: Request) -> str | None:
-    return (
-        request.headers.get("cf-connecting-ip")
-        or _first_forwarded_ip(request.headers.get("x-forwarded-for"))
-        or request.headers.get("x-real-ip")
-        or (request.client.host if request.client else None)
-    )
+    return request.client.host if request.client else None
 
 
 def _is_private_admin_client(request: Request) -> bool:
@@ -90,8 +75,10 @@ async def require_admin(request: Request) -> None:
     """Protect management APIs from the public internet.
 
     Health/readiness remain public for orchestrators. Sensitive management
-    endpoints are available from private networks, or from any network with the
-    configured admin bearer token.
+    endpoints are available from private socket peers, or from any network with
+    the configured admin bearer token. Forwarded IP headers are deliberately not
+    trusted here because callers can forge them unless a separate trusted-proxy
+    layer strips and rewrites them.
     """
     expected = _configured_admin_token(request)
     if expected is None and (_allow_public_admin(request) or _is_private_admin_client(request)):
