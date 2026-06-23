@@ -1,0 +1,64 @@
+name: acme-weather
+title: "Acme Weather API"
+description: "Current weather API"
+category: data
+version: v1
+
+forward_url: https://api.example.com
+openapi_url: https://api.example.com/openapi.json
+
+display:
+  service_url: ${X402_GATEWAY_PUBLIC_BASE_URL}/providers/acme-weather
+  logo: https://example.com/logo.png
+  tags: ["weather", "data"]
+
+discovery:
+  use_case: "Use for city-level weather lookup"
+  spend_aware_usage:
+    - "Call current weather before forecast when a single current snapshot is enough."
+  when_to_use:
+    - "Use when an agent needs paid current weather data for a city."
+  when_not_to_use:
+    - "Do not use for historical climate analysis."
+  request_examples:
+    - "GET /providers/acme-weather/v1/current?city=Singapore"
+
+routing:
+  type: proxy
+  auth:
+    method: header
+    key: Authorization
+    prefix: "Bearer "
+    value_from_env: ACME_API_TOKEN
+
+operator:
+  network: tron-mainnet
+  currencies:
+    usd: ["USDT", "USDD"]
+  recipient: "TProviderWalletBase58"
+  scheme: exact_permit
+  facilitator_url: ${X402_FACILITATOR_URL}
+  valid_for_seconds: 300
+  signer:
+    backend: local_secure
+    profile: prod-tron
+
+recipients:
+  vendor:
+    account: "TVendorWalletBase58"
+    label: "Acme vendor"
+
+endpoints:
+  - method: GET
+    path: /v1/current
+    description: "Current weather for a city"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.002
+
+  - method: GET
+    path: /health

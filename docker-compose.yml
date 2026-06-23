@@ -1,0 +1,46 @@
+services:
+  gateway:
+    image: ${X402_GATEWAY_IMAGE:-bankofai/x402-gateway:test}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        X402_SDK_SPEC: "${X402_SDK_SPEC:-bankofai-x402>=0.6.0}"
+    container_name: x402-gateway
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      X402_GATEWAY_PROVIDERS_DIR: ${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}
+      X402_GATEWAY_LOG_LEVEL: ${X402_GATEWAY_LOG_LEVEL:-info}
+      X402_GATEWAY_PUBLIC_BASE_URL: ${X402_GATEWAY_PUBLIC_BASE_URL:-http://host.docker.internal:4020}
+      X402_GATEWAY_ADMIN_TOKEN: ${X402_GATEWAY_ADMIN_TOKEN:-}
+      X402_GATEWAY_ADMIN_ALLOW_PUBLIC: ${X402_GATEWAY_ADMIN_ALLOW_PUBLIC:-false}
+      X402_FACILITATOR_URL: ${X402_FACILITATOR_URL:-https://facilitator.example.com}
+      BANKOFAI_API_KEY: ${BANKOFAI_API_KEY:-}
+    ports:
+      - "${X402_GATEWAY_PORT:-4020}:8080"
+    volumes:
+      - ./providers:${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}:ro
+    command:
+      - x402-gateway
+      - server
+      - start
+      - --providers-dir
+      - ${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --quiet
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >
+          python -c "import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8080/__402/ready', timeout=3).read()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
