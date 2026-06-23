@@ -412,6 +412,31 @@ def test_proxy_forwards_cloudflare_client_ip(
         client.close()
 
 
+def test_proxy_requests_identity_encoding_from_upstream(
+    provider_yml_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    upstream_calls: list[httpx.Request] = []
+
+    def upstream_handler(request: httpx.Request) -> httpx.Response:
+        upstream_calls.append(request)
+        return httpx.Response(200, json={"healthy": True})
+
+    transport = httpx.MockTransport(upstream_handler)
+    client, _, _ = _build_test_client(
+        provider_yml_path, transport=transport, monkeypatch=monkeypatch
+    )
+    try:
+        response = client.get(
+            "/providers/acme-weather/health",
+            headers={"Accept-Encoding": "gzip, deflate, br"},
+        )
+        assert response.status_code == 200
+        assert len(upstream_calls) == 1
+        assert upstream_calls[0].headers["accept-encoding"] == "identity"
+    finally:
+        client.close()
+
+
 def test_proxy_forwards_x_forwarded_for_without_cloudflare(
     provider_yml_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -61,6 +61,7 @@ STRIP_REQUEST_HEADERS = frozenset(
         "payment-signature",
         "x-payment-required",
         "payment-required",
+        "accept-encoding",
     }
 )
 
@@ -253,6 +254,10 @@ async def _forward_upstream(
     target = upstream_url(provider.routing.url, target_path)
     headers = filter_request_headers(dict(request.headers))
     headers = add_client_ip_headers(headers, request)
+    # The gateway returns a materialized FastAPI response, not a streaming byte-for-byte
+    # tunnel. Ask upstreams for an uncompressed body so response bytes and headers stay
+    # consistent even when httpx cannot decode a newer content encoding.
+    headers["accept-encoding"] = "identity"
     payload_body = body if body is not None else await request.body()
 
     timeout = httpx.Timeout(30.0, connect=5.0)
