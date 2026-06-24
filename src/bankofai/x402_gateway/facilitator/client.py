@@ -11,6 +11,7 @@ Thin wrapper around `bankofai.x402.facilitator.FacilitatorClient` that adds:
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Optional, Protocol
 
 from bankofai.x402.facilitator.facilitator_client import FacilitatorClient
@@ -80,4 +81,6 @@ def build_facilitator(url: Optional[str]) -> FacilitatorAPI:
     if not url:
         logger.warning("no facilitator configured; payments will not settle")
         return StubFacilitator()
-    return FacilitatorClient(base_url=url)
+    api_key = os.getenv("FACILITATOR_API_KEY")
+    headers = {"X-API-KEY": api_key} if api_key else None
+    return FacilitatorClient(base_url=url, headers=headers)
