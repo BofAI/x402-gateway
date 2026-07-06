@@ -1,0 +1,45 @@
+name: dexscreener-search
+title: "DexScreener Search"
+description: "DEX pair search from DexScreener"
+category: finance
+version: v1
+
+forward_url: https://api.dexscreener.com
+
+display:
+  service_url: ${X402_GATEWAY_PUBLIC_BASE_URL}/providers/dexscreener-search
+  tags: ["dexscreener", "dex", "tokens"]
+
+discovery:
+  use_case: "Use for searching DEX pairs."
+  spend_aware_usage:
+    - "Use a low fixed Nile USDT payment per search request."
+  when_to_use:
+    - "Use when an agent needs DEX pair search data."
+  request_examples:
+    - "GET /providers/dexscreener-search/latest/dex/search?q=TRX"
+
+routing:
+  type: proxy
+
+operator:
+  network: tron-nile
+  currencies:
+    usd: ["USDT"]
+  recipient: ${X402_PROVIDER_RECIPIENT_TRON}
+  scheme: exact
+  facilitator_url: https://tn-facilitator.bankofai.io
+  facilitator_api_key_env: X402_FACILITATOR_API_KEY
+  valid_for_seconds: 300
+
+endpoints:
+  - method: GET
+    path: /latest/dex/search
+    description: "Search DEX pairs"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.0001

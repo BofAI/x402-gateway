@@ -1,0 +1,45 @@
+name: goplus-token-security
+title: "GoPlus Token Security"
+description: "Token security data from GoPlus"
+category: security
+version: v1
+
+forward_url: https://api.gopluslabs.io
+
+display:
+  service_url: ${X402_GATEWAY_PUBLIC_BASE_URL}/providers/goplus-token-security
+  tags: ["goplus", "security", "tokens"]
+
+discovery:
+  use_case: "Use for reading token security data."
+  spend_aware_usage:
+    - "Use a low fixed Nile USDT payment per security query."
+  when_to_use:
+    - "Use when an agent needs token risk metadata."
+  request_examples:
+    - "GET /providers/goplus-token-security/api/v1/token_security/56?contract_addresses=0x55d398326f99059ff775485246999027b3197955"
+
+routing:
+  type: proxy
+
+operator:
+  network: tron-nile
+  currencies:
+    usd: ["USDT"]
+  recipient: ${X402_PROVIDER_RECIPIENT_TRON}
+  scheme: exact
+  facilitator_url: https://tn-facilitator.bankofai.io
+  facilitator_api_key_env: X402_FACILITATOR_API_KEY
+  valid_for_seconds: 300
+
+endpoints:
+  - method: GET
+    path: /api/v1/token_security/56
+    description: "BSC USDT token security"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.0001

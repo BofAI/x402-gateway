@@ -1,0 +1,45 @@
+name: defillama-yields
+title: "DefiLlama Yields"
+description: "Yield pools from DefiLlama"
+category: finance
+version: v1
+
+forward_url: https://yields.llama.fi
+
+display:
+  service_url: ${X402_GATEWAY_PUBLIC_BASE_URL}/providers/defillama-yields
+  tags: ["defillama", "yields", "defi"]
+
+discovery:
+  use_case: "Use for reading public DeFi yield pool data."
+  spend_aware_usage:
+    - "Use a low fixed Nile USDT payment per yield query."
+  when_to_use:
+    - "Use when an agent needs yield pool data."
+  request_examples:
+    - "GET /providers/defillama-yields/pools"
+
+routing:
+  type: proxy
+
+operator:
+  network: tron-nile
+  currencies:
+    usd: ["USDT"]
+  recipient: ${X402_PROVIDER_RECIPIENT_TRON}
+  scheme: exact
+  facilitator_url: https://tn-facilitator.bankofai.io
+  facilitator_api_key_env: X402_FACILITATOR_API_KEY
+  valid_for_seconds: 300
+
+endpoints:
+  - method: GET
+    path: /pools
+    description: "Yield pools"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.0001

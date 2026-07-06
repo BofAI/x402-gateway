@@ -1,0 +1,45 @@
+name: defillama-tvl
+title: "DefiLlama TVL"
+description: "Current TVL data from DefiLlama"
+category: finance
+version: v1
+
+forward_url: https://api.llama.fi
+
+display:
+  service_url: ${X402_GATEWAY_PUBLIC_BASE_URL}/providers/defillama-tvl
+  tags: ["defillama", "tvl", "defi"]
+
+discovery:
+  use_case: "Use for reading current protocol TVL from DefiLlama."
+  spend_aware_usage:
+    - "Use a low fixed Nile USDT payment per TVL request."
+  when_to_use:
+    - "Use when an agent needs a protocol TVL snapshot."
+  request_examples:
+    - "GET /providers/defillama-tvl/tvl/ethereum"
+
+routing:
+  type: proxy
+
+operator:
+  network: tron-nile
+  currencies:
+    usd: ["USDT"]
+  recipient: ${X402_PROVIDER_RECIPIENT_TRON}
+  scheme: exact
+  facilitator_url: https://tn-facilitator.bankofai.io
+  facilitator_api_key_env: X402_FACILITATOR_API_KEY
+  valid_for_seconds: 300
+
+endpoints:
+  - method: GET
+    path: /tvl/ethereum
+    description: "Ethereum TVL"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.0001
