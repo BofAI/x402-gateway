@@ -34,6 +34,8 @@ operator:
     usd: ["USDT"]
   recipient: ${X402_PROVIDER_RECIPIENT_TRON}
   scheme: exact
+  protocol: exact
+  asset_transfer_method: permit2
   facilitator_url: https://tn-facilitator.bankofai.io
   facilitator_api_key_env: X402_FACILITATOR_API_KEY
   valid_for_seconds: 300

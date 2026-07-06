@@ -69,6 +69,8 @@ operator:
     usd: ["USDT"]
   recipient: ${X402_PROVIDER_RECIPIENT_TRON}
   scheme: exact
+  protocol: exact
+  asset_transfer_method: permit2
   facilitator_url: ${X402_FACILITATOR_URL}
   facilitator_api_key_env: X402_FACILITATOR_API_KEY
   valid_for_seconds: 300
@@ -81,6 +83,11 @@ endpoints:
         - tiers:
             - price_usd: 0.002
 ```
+
+`@bankofai/x402-*` 1.0.0 uses `scheme: exact` with
+`extra.assetTransferMethod: permit2` in the payment requirement. Older provider
+configs that say `exact_permit` are normalized at load time, but new provider
+configs should use `protocol: exact` and `asset_transfer_method: permit2`.
 
 Network aliases accepted:
 

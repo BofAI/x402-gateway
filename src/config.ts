@@ -13,6 +13,9 @@ export type ProviderConfig = {
     currencies?: Record<string, string[]>;
     recipient: string;
     scheme?: string;
+    protocol?: string;
+    asset_transfer_method?: string;
+    assetTransferMethod?: string;
     facilitator_url?: string;
     facilitator_api_key?: string;
     facilitator_api_key_env?: string;
@@ -98,7 +101,7 @@ export function loadProvider(file: string): ProviderEntry {
   const config = expandDeep(YAML.parse(fs.readFileSync(file, "utf8"))) as ProviderConfig;
   validateProvider(config, file);
   config.operator.network = normalizeNetwork(config.operator.network);
-  config.operator.scheme = "exact";
+  normalizePaymentProtocol(config, file);
   return {
     config,
     facilitatorUrl:
@@ -114,6 +117,18 @@ export function loadProvider(file: string): ProviderEntry {
       process.env.X402_FACILITATOR_API_KEY ||
       process.env.FACILITATOR_API_KEY,
   };
+}
+
+function normalizePaymentProtocol(config: ProviderConfig, file: string): void {
+  const raw = String(config.operator.protocol || config.operator.scheme || "exact").toLowerCase();
+  const normalized = raw.replace(/[-:\s]/g, "_");
+  if (!["exact", "exact_permit", "permit2", "exact_permit2"].includes(normalized)) {
+    throw new Error(`${file}: unsupported x402 protocol ${raw}; use exact + permit2`);
+  }
+  config.operator.scheme = "exact";
+  config.operator.protocol = "exact";
+  config.operator.asset_transfer_method = "permit2";
+  config.operator.assetTransferMethod = "permit2";
 }
 
 export function loadProviders(providerPath: string): Map<string, ProviderEntry> {
@@ -163,6 +178,7 @@ export function paymentRequirements(provider: ProviderConfig, price: number): Pa
   const payTo = provider.recipients?.[provider.operator.recipient]?.account ?? provider.operator.recipient;
   return symbols.map(symbol => {
     const token = getToken(network, symbol);
+    const transferMethod = provider.operator.assetTransferMethod || provider.operator.asset_transfer_method || token.assetTransferMethod;
     return {
       scheme: "exact",
       network,
@@ -170,7 +186,7 @@ export function paymentRequirements(provider: ProviderConfig, price: number): Pa
       asset: token.address,
       payTo,
       maxTimeoutSeconds: provider.operator.valid_for_seconds ?? 300,
-      extra: token.assetTransferMethod ? { assetTransferMethod: token.assetTransferMethod } : {},
+      extra: transferMethod === "permit2" ? { assetTransferMethod: "permit2" } : {},
     };
   });
 }
