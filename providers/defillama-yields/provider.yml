@@ -7,7 +7,7 @@ version: v1
 forward_url: https://yields.llama.fi
 
 display:
-  service_url: ${X402_GATEWAY_PUBLIC_BASE_URL}/providers/defillama-yields
+  service_url: https://tm-x402-gateway.bankofai.io/providers/defillama-yields
   tags: ["defillama", "yields", "defi"]
 
 discovery:
@@ -26,12 +26,12 @@ operator:
   network: tron-nile
   currencies:
     usd: ["USDT"]
-  recipient: ${X402_PROVIDER_RECIPIENT_TRON}
+  recipient: TTX1Us19zqsLXhY39PPR7KRUoMa93s3J3i
   scheme: exact
   protocol: exact
   asset_transfer_method: permit2
   facilitator_url: https://tn-facilitator.bankofai.io
-  facilitator_api_key_env: X402_FACILITATOR_API_KEY
+  facilitator_api_key: 2125fd45151833cfb529d1e77885fd46a1244966bc4e83add35b40ba494ea89d
   valid_for_seconds: 300
 
 endpoints:
