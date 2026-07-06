@@ -10,7 +10,9 @@ RUN npm ci --include=dev
 COPY tsconfig.json README.md LICENSE ./
 COPY src/ ./src/
 RUN npm run build \
-    && npm prune --omit=dev
+    && npm prune --omit=dev \
+    && chmod +x /app/dist/cli.js \
+    && ln -s /app/dist/cli.js /usr/local/bin/x402-gateway
 
 ENV NODE_ENV=production
 

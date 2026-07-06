@@ -26,9 +26,13 @@ function opt(options: Options, key: string, fallback: string): string {
 }
 
 const options = parseArgs(process.argv.slice(2));
-const providersPath = opt(options, "providers", opt(options, "provider", "providers"));
-const host = opt(options, "host", "127.0.0.1");
-const port = Number(opt(options, "port", "8080"));
+const providersPath = opt(
+  options,
+  "providers",
+  opt(options, "provider", process.env.X402_GATEWAY_PROVIDERS_DIR || "/app/providers"),
+);
+const host = opt(options, "host", process.env.X402_GATEWAY_HOST || "0.0.0.0");
+const port = Number(opt(options, "port", process.env.PORT || "8080"));
 const providers = loadProviders(providersPath);
 const server = createGatewayServer(providers);
 
