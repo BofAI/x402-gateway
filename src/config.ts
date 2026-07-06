@@ -137,8 +137,18 @@ export function loadProviders(providerPath: string): Map<string, ProviderEntry> 
 
 export function endpointFor(provider: ProviderConfig, method: string, routePath: string) {
   return provider.endpoints?.find(
-    endpoint => endpoint.method.toUpperCase() === method.toUpperCase() && endpoint.path === routePath,
+    endpoint => endpoint.method.toUpperCase() === method.toUpperCase() && pathMatches(endpoint.path, routePath),
   );
+}
+
+function pathMatches(template: string, routePath: string): boolean {
+  const templateParts = template.split("/").filter(Boolean);
+  const routeParts = routePath.split("/").filter(Boolean);
+  if (templateParts.length !== routeParts.length) return false;
+  return templateParts.every((part, index) => {
+    if (part.startsWith("{") && part.endsWith("}")) return routeParts[index].length > 0;
+    return part === routeParts[index];
+  });
 }
 
 export function priceUsd(endpoint: ReturnType<typeof endpointFor>, params: Record<string, string> = {}): number {
