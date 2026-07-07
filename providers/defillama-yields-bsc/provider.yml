@@ -1,0 +1,58 @@
+name: defillama-yields-bsc
+title: "DefiLlama Yields (BSC Testnet)"
+description: "Yield pool data from DefiLlama"
+category: finance
+version: v1
+
+forward_url: https://yields.llama.fi
+
+display:
+  service_url: https://tm-x402-gateway.bankofai.io/providers/defillama-yields-bsc
+  tags: ["defillama", "yields", "defi"]
+
+discovery:
+  use_case: "Use DefiLlama Yields through x402 on BSC Testnet."
+  spend_aware_usage:
+    - "Use a low fixed BSC Testnet USDT payment per request."
+  when_to_use:
+    - "Yield pool data from DefiLlama"
+  request_examples:
+    - "GET /providers/defillama-yields-bsc/pools"
+    - "GET /providers/defillama-yields-bsc/chart/{pool}"
+
+routing:
+  type: proxy
+
+operator:
+  network: bsc-testnet
+  currencies:
+    usd: ["USDT"]
+  recipient: "0x6d361463Ad6Df90bC34aF65f4970d3271aa83535"
+  scheme: exact
+  protocol: exact
+  asset_transfer_method: permit2
+  facilitator_url: https://tn-facilitator.bankofai.io
+  facilitator_api_key: 2125fd45151833cfb529d1e77885fd46a1244966bc4e83add35b40ba494ea89d
+  valid_for_seconds: 300
+
+endpoints:
+  - method: GET
+    path: /pools
+    description: "All yield pools with current APY, TVL, chain and project"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.000001
+  - method: GET
+    path: /chart/{pool}
+    description: "Historical APY and TVL time series for a pool"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.000001
