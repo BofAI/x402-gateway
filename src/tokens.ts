@@ -19,7 +19,7 @@ export const TOKENS: Record<string, Record<string, TokenInfo>> = {
     USDT: { address: "0x55d398326f99059fF775485246999027B3197955", decimals: 18, name: "Tether USD", symbol: "USDT", assetTransferMethod: "permit2" },
   },
   "eip155:97": {
-    USDT: { address: "0x64544969ed7EBf5f083679233325356EbE738930", decimals: 18, name: "USD Coin", symbol: "USDT", assetTransferMethod: "permit2" },
+    USDT: { address: "0x337610d27c682E347C9cD60BD4b3b107C9d34dDd", decimals: 18, name: "Tether USD", symbol: "USDT", assetTransferMethod: "permit2" },
     USDC: { address: "0x64544969ed7EBf5f083679233325356EbE738930", decimals: 18, name: "USD Coin", symbol: "USDC", assetTransferMethod: "permit2" },
   },
 };
