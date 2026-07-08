@@ -34,23 +34,6 @@ operator:
   facilitator_url: https://facilitator-v2.bankofai.io
   facilitator_api_key: 2125fd45151833cfb529d1e77885fd46a1244966bc4e83add35b40ba494ea89d
   valid_for_seconds: 300
-  payment_routes:
-    - network: tron-mainnet
-      currencies:
-        usd: ["USDT"]
-      recipient: TLXPgJVJFgL97gc49j8w8kC22mDTpH9EGa
-      scheme: exact
-      protocol: exact
-      asset_transfer_method: permit2
-      valid_for_seconds: 300
-    - network: tron-nile
-      currencies:
-        usd: ["USDT"]
-      recipient: TTX1Us19zqsLXhY39PPR7KRUoMa93s3J3i
-      scheme: exact
-      protocol: exact
-      asset_transfer_method: permit2
-      valid_for_seconds: 300
 
 endpoints:
   - method: GET

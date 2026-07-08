@@ -20,7 +20,6 @@ export type ProviderConfig = {
     facilitator_api_key?: string;
     facilitator_api_key_env?: string;
     valid_for_seconds?: number;
-    payment_routes?: PaymentRouteConfig[];
   };
   recipients?: Record<string, { account: string }>;
   routing?: {
@@ -53,17 +52,6 @@ export type ProviderEntry = {
   facilitatorApiKey?: string;
 };
 
-type PaymentRouteConfig = {
-  network: string;
-  currencies?: Record<string, string[]>;
-  recipient: string;
-  scheme?: string;
-  protocol?: string;
-  asset_transfer_method?: string;
-  assetTransferMethod?: string;
-  valid_for_seconds?: number;
-};
-
 function expandEnv(value: string): string {
   return value.replace(/\$\{([^}]+)\}/g, (_, name: string) => process.env[name] ?? "");
 }
@@ -88,10 +76,6 @@ function validateProvider(config: ProviderConfig, file: string): void {
   assertString(config.forward_url, `${file}: forward_url`);
   assertString(config.operator?.network, `${file}: operator.network`);
   assertString(config.operator?.recipient, `${file}: operator.recipient`);
-  for (const [index, route] of (config.operator?.payment_routes ?? []).entries()) {
-    assertString(route.network, `${file}: operator.payment_routes[${index}].network`);
-    assertString(route.recipient, `${file}: operator.payment_routes[${index}].recipient`);
-  }
   if (!config.endpoints?.length) throw new Error(`${file}: endpoints must contain at least one endpoint`);
   const seen = new Set<string>();
   for (const [index, endpoint] of config.endpoints.entries()) {
@@ -117,9 +101,6 @@ export function loadProvider(file: string): ProviderEntry {
   const config = expandDeep(YAML.parse(fs.readFileSync(file, "utf8"))) as ProviderConfig;
   validateProvider(config, file);
   config.operator.network = normalizeNetwork(config.operator.network);
-  for (const route of config.operator.payment_routes ?? []) {
-    route.network = normalizeNetwork(route.network);
-  }
   normalizePaymentProtocol(config, file);
   return {
     config,
@@ -139,22 +120,15 @@ export function loadProvider(file: string): ProviderEntry {
 }
 
 function normalizePaymentProtocol(config: ProviderConfig, file: string): void {
-  normalizeRouteProtocol(config.operator, file);
-  for (const [index, route] of (config.operator.payment_routes ?? []).entries()) {
-    normalizeRouteProtocol(route, `${file}: operator.payment_routes[${index}]`);
-  }
-}
-
-function normalizeRouteProtocol(route: PaymentRouteConfig, file: string): void {
-  const raw = String(route.protocol || route.scheme || "exact").toLowerCase();
+  const raw = String(config.operator.protocol || config.operator.scheme || "exact").toLowerCase();
   const normalized = raw.replace(/[-:\s]/g, "_");
   if (!["exact", "exact_permit", "permit2", "exact_permit2"].includes(normalized)) {
     throw new Error(`${file}: unsupported x402 protocol ${raw}; use exact + permit2`);
   }
-  route.scheme = "exact";
-  route.protocol = "exact";
-  route.asset_transfer_method = "permit2";
-  route.assetTransferMethod = "permit2";
+  config.operator.scheme = "exact";
+  config.operator.protocol = "exact";
+  config.operator.asset_transfer_method = "permit2";
+  config.operator.assetTransferMethod = "permit2";
 }
 
 export function loadProviders(providerPath: string): Map<string, ProviderEntry> {
@@ -199,28 +173,20 @@ export function priceUsd(endpoint: ReturnType<typeof endpointFor>, params: Recor
 
 export function paymentRequirements(provider: ProviderConfig, price: number): PaymentRequirement[] {
   if (price <= 0) return [];
-  const routes = provider.operator.payment_routes?.length ? provider.operator.payment_routes : [provider.operator];
-  return routes.flatMap(route => {
-    const network = normalizeNetwork(route.network);
-    const symbols = route.currencies?.usd ?? provider.operator.currencies?.usd ?? ["USDT"];
-    const payTo = provider.recipients?.[route.recipient]?.account ?? route.recipient;
-    return symbols.map(symbol => {
-      const token = getToken(network, symbol);
-      const transferMethod =
-        route.assetTransferMethod ||
-        route.asset_transfer_method ||
-        provider.operator.assetTransferMethod ||
-        provider.operator.asset_transfer_method ||
-        token.assetTransferMethod;
-      return {
-        scheme: "exact",
-        network,
-        amount: toSmallestUnit(price, token.decimals),
-        asset: token.address,
-        payTo,
-        maxTimeoutSeconds: route.valid_for_seconds ?? provider.operator.valid_for_seconds ?? 300,
-        extra: transferMethod === "permit2" ? { assetTransferMethod: "permit2" } : {},
-      };
-    });
+  const network = normalizeNetwork(provider.operator.network);
+  const symbols = provider.operator.currencies?.usd ?? ["USDT"];
+  const payTo = provider.recipients?.[provider.operator.recipient]?.account ?? provider.operator.recipient;
+  return symbols.map(symbol => {
+    const token = getToken(network, symbol);
+    const transferMethod = provider.operator.assetTransferMethod || provider.operator.asset_transfer_method || token.assetTransferMethod;
+    return {
+      scheme: "exact",
+      network,
+      amount: toSmallestUnit(price, token.decimals),
+      asset: token.address,
+      payTo,
+      maxTimeoutSeconds: provider.operator.valid_for_seconds ?? 300,
+      extra: transferMethod === "permit2" ? { assetTransferMethod: "permit2" } : {},
+    };
   });
 }
