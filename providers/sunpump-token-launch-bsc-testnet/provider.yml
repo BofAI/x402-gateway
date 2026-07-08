@@ -1,0 +1,47 @@
+name: sunpump-token-launch-bsc-testnet
+title: "SunPump Token Launch (BNB Smart Chain Testnet)"
+description: "Configured SunPump launch route; upstream POST currently returns 405"
+category: finance
+version: v1
+
+forward_url: https://sunpump.meme
+
+display:
+  service_url: https://tm-x402-gateway.bankofai.io/providers/sunpump-token-launch-bsc-testnet
+  tags: ["sunpump", "token-launch", "tron"]
+
+discovery:
+  use_case: "Inspect the configured SunPump x402 route on BNB Smart Chain Testnet while the upstream launch API is unavailable."
+  spend_aware_usage:
+    - "Use a low fixed BNB Smart Chain Testnet USDT payment per request."
+  when_to_use:
+    - "Payment-route integration checks while SunPump upstream POST returns 405"
+  request_examples:
+    - "POST /providers/sunpump-token-launch-bsc-testnet/pump-api/ai/agentTokenLaunch"
+
+routing:
+  type: proxy
+
+operator:
+  network: bsc-testnet
+  currencies:
+    usd: ["USDT"]
+  recipient: "0x6d361463Ad6Df90bC34aF65f4970d3271aa83535"
+  scheme: exact
+  protocol: exact
+  asset_transfer_method: permit2
+  facilitator_url: https://facilitator-v2.bankofai.io
+  facilitator_api_key: 2125fd45151833cfb529d1e77885fd46a1244966bc4e83add35b40ba494ea89d
+  valid_for_seconds: 300
+
+endpoints:
+  - method: POST
+    path: /pump-api/ai/agentTokenLaunch
+    description: "Configured SunPump launch route; upstream POST currently returns 405"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.000001

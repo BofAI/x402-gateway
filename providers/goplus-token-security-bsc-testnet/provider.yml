@@ -1,0 +1,69 @@
+name: goplus-token-security-bsc-testnet
+title: "GoPlus Token Security (BNB Smart Chain Testnet)"
+description: "Token and address security data from GoPlus"
+category: security
+version: v1
+
+forward_url: https://api.gopluslabs.io
+
+display:
+  service_url: https://tm-x402-gateway.bankofai.io/providers/goplus-token-security-bsc-testnet
+  tags: ["goplus", "security", "tokens"]
+
+discovery:
+  use_case: "Use GoPlus Token Security through x402 on BNB Smart Chain Testnet."
+  spend_aware_usage:
+    - "Use a low fixed BNB Smart Chain Testnet USDT payment per request."
+  when_to_use:
+    - "Token and address security data from GoPlus"
+  request_examples:
+    - "GET /providers/goplus-token-security-bsc-testnet/api/v1/token_security/{chain_id}"
+    - "GET /providers/goplus-token-security-bsc-testnet/api/v1/address_security/{address}"
+    - "GET /providers/goplus-token-security-bsc-testnet/api/v2/token_approval_security/{chain_id}?addresses={address}"
+
+routing:
+  type: proxy
+
+operator:
+  network: bsc-testnet
+  currencies:
+    usd: ["USDT"]
+  recipient: "0x6d361463Ad6Df90bC34aF65f4970d3271aa83535"
+  scheme: exact
+  protocol: exact
+  asset_transfer_method: permit2
+  facilitator_url: https://facilitator-v2.bankofai.io
+  facilitator_api_key: 2125fd45151833cfb529d1e77885fd46a1244966bc4e83add35b40ba494ea89d
+  valid_for_seconds: 300
+
+endpoints:
+  - method: GET
+    path: /api/v1/token_security/{chain_id}
+    description: "Token security report"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.000001
+  - method: GET
+    path: /api/v1/address_security/{address}
+    description: "Address security report"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.000001
+  - method: GET
+    path: /api/v2/token_approval_security/{chain_id}
+    description: "Token approval security report"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.000001

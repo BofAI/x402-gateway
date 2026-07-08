@@ -1,0 +1,69 @@
+name: dexscreener-dex-data-bsc-testnet
+title: "DexScreener DEX Data (BNB Smart Chain Testnet)"
+description: "DEX pair market data from DexScreener"
+category: finance
+version: v1
+
+forward_url: https://api.dexscreener.com
+
+display:
+  service_url: https://tm-x402-gateway.bankofai.io/providers/dexscreener-dex-data-bsc-testnet
+  tags: ["dexscreener", "dex", "tokens"]
+
+discovery:
+  use_case: "Use DexScreener DEX Data through x402 on BNB Smart Chain Testnet."
+  spend_aware_usage:
+    - "Use a low fixed BNB Smart Chain Testnet USDT payment per request."
+  when_to_use:
+    - "DEX pair market data from DexScreener"
+  request_examples:
+    - "GET /providers/dexscreener-dex-data-bsc-testnet/latest/dex/tokens/{tokenAddresses}"
+    - "GET /providers/dexscreener-dex-data-bsc-testnet/latest/dex/search"
+    - "GET /providers/dexscreener-dex-data-bsc-testnet/token-profiles/latest/v1"
+
+routing:
+  type: proxy
+
+operator:
+  network: bsc-testnet
+  currencies:
+    usd: ["USDT"]
+  recipient: "0x6d361463Ad6Df90bC34aF65f4970d3271aa83535"
+  scheme: exact
+  protocol: exact
+  asset_transfer_method: permit2
+  facilitator_url: https://facilitator-v2.bankofai.io
+  facilitator_api_key: 2125fd45151833cfb529d1e77885fd46a1244966bc4e83add35b40ba494ea89d
+  valid_for_seconds: 300
+
+endpoints:
+  - method: GET
+    path: /latest/dex/tokens/{tokenAddresses}
+    description: "DEX pairs for one or more token addresses"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.000001
+  - method: GET
+    path: /latest/dex/search
+    description: "Search DEX pairs by token name, symbol or address"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.000001
+  - method: GET
+    path: /token-profiles/latest/v1
+    description: "Latest token profiles"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.000001
