@@ -1,5 +1,5 @@
 name: sunpump-token-launch-tron
-title: "SunPump Token Launch (TRON Nile)"
+title: "SunPump Token Launch (TRON Mainnet)"
 description: "Configured SunPump launch route; upstream POST currently returns 405"
 category: finance
 version: v1
@@ -11,9 +11,9 @@ display:
   tags: ["sunpump", "token-launch", "tron"]
 
 discovery:
-  use_case: "Inspect the configured SunPump x402 route on TRON Nile while the upstream launch API is unavailable."
+  use_case: "Inspect the configured SunPump x402 route on TRON Mainnet while the upstream launch API is unavailable."
   spend_aware_usage:
-    - "Use a low fixed TRON Nile USDT payment per request."
+    - "Use a low fixed TRON Mainnet USDT payment per request."
   when_to_use:
     - "Payment-route integration checks while SunPump upstream POST returns 405"
   request_examples:
@@ -23,14 +23,14 @@ routing:
   type: proxy
 
 operator:
-  network: tron-nile
+  network: tron-mainnet
   currencies:
     usd: ["USDT"]
-  recipient: TTX1Us19zqsLXhY39PPR7KRUoMa93s3J3i
+  recipient: TLXPgJVJFgL97gc49j8w8kC22mDTpH9EGa
   scheme: exact
   protocol: exact
   asset_transfer_method: permit2
-  facilitator_url: https://tn-facilitator.bankofai.io
+  facilitator_url: https://facilitator-v2.bankofai.io
   facilitator_api_key: 2125fd45151833cfb529d1e77885fd46a1244966bc4e83add35b40ba494ea89d
   valid_for_seconds: 300
 

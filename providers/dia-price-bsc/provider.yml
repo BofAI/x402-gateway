@@ -1,5 +1,5 @@
 name: dia-price-bsc
-title: "DIA Price Feeds (BSC Testnet)"
+title: "DIA Price Feeds (BNB Smart Chain)"
 description: "Oracle price feeds from DIA"
 category: finance
 version: v1
@@ -11,9 +11,9 @@ display:
   tags: ["dia", "oracle", "prices"]
 
 discovery:
-  use_case: "Use DIA Price Feeds through x402 on BSC Testnet."
+  use_case: "Use DIA Price Feeds through x402 on BNB Smart Chain."
   spend_aware_usage:
-    - "Use a low fixed BSC Testnet USDT payment per request."
+    - "Use a low fixed BNB Smart Chain USDT payment per request."
   when_to_use:
     - "Oracle price feeds from DIA"
   request_examples:
@@ -24,14 +24,14 @@ routing:
   type: proxy
 
 operator:
-  network: bsc-testnet
+  network: bsc-mainnet
   currencies:
     usd: ["USDT"]
-  recipient: "0x6d361463Ad6Df90bC34aF65f4970d3271aa83535"
+  recipient: "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86"
   scheme: exact
   protocol: exact
   asset_transfer_method: permit2
-  facilitator_url: https://tn-facilitator.bankofai.io
+  facilitator_url: https://facilitator-v2.bankofai.io
   facilitator_api_key: 2125fd45151833cfb529d1e77885fd46a1244966bc4e83add35b40ba494ea89d
   valid_for_seconds: 300
 
