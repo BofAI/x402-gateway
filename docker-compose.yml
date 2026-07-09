@@ -21,8 +21,7 @@ services:
     volumes:
       - ./providers:${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}:ro
     command:
-      - node
-      - dist/cli.js
+      - x402-gateway
       - --providers
       - ${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}
       - --host
