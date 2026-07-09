@@ -1,27 +1,24 @@
-name: acme-weather
-title: "Acme Weather API"
-description: "Current weather API"
+name: tron-nile-usdt
+title: "TRON Nile USDT Provider"
+description: "TRON Nile provider protected by x402 exact Permit2 USDT payment"
 category: data
 version: v1
 
-forward_url: https://api.example.com
-openapi_url: https://api.example.com/openapi.json
+forward_url: ${X402_PROVIDER_FORWARD_URL}
+openapi_url: ${X402_PROVIDER_OPENAPI_URL}
 
 display:
-  service_url: ${X402_GATEWAY_PUBLIC_BASE_URL}/providers/acme-weather
-  logo: https://example.com/logo.png
-  tags: ["weather", "data"]
+  service_url: ${X402_GATEWAY_PUBLIC_BASE_URL}/providers/tron-nile-usdt
+  tags: ["tron-nile", "usdt", "x402"]
 
 discovery:
-  use_case: "Use for city-level weather lookup"
+  use_case: "Use for validating TRON Nile USDT x402 payments."
   spend_aware_usage:
-    - "Call current weather before forecast when a single current snapshot is enough."
+    - "Use small Nile USDT amounts while validating facilitator and gateway wiring."
   when_to_use:
-    - "Use when an agent needs paid current weather data for a city."
-  when_not_to_use:
-    - "Do not use for historical climate analysis."
+    - "Use when testing x402 exact Permit2 payments on TRON Nile."
   request_examples:
-    - "GET /providers/acme-weather/v1/current?city=Singapore"
+    - "GET /providers/tron-nile-usdt/v1/ping"
 
 routing:
   type: proxy
@@ -29,36 +26,28 @@ routing:
     method: header
     key: Authorization
     prefix: "Bearer "
-    value_from_env: ACME_API_TOKEN
+    value_from_env: X402_PROVIDER_API_TOKEN
 
 operator:
-  network: tron-mainnet
+  network: tron-nile
   currencies:
-    usd: ["USDT", "USDD"]
-  recipient: "TProviderWalletBase58"
-  scheme: exact_permit
-  facilitator_url: ${X402_FACILITATOR_URL}
+    usd: ["USDT"]
+  recipient: ${X402_PROVIDER_RECIPIENT_TRON}
+  scheme: exact
+  protocol: exact
+  asset_transfer_method: permit2
+  facilitator_url: https://tn-facilitator.bankofai.io
+  facilitator_api_key_env: X402_FACILITATOR_API_KEY
   valid_for_seconds: 300
-  signer:
-    backend: local_secure
-    profile: prod-tron
-
-recipients:
-  vendor:
-    account: "TVendorWalletBase58"
-    label: "Acme vendor"
 
 endpoints:
   - method: GET
-    path: /v1/current
-    description: "Current weather for a city"
+    path: /v1/ping
+    description: "TRON Nile USDT paid ping endpoint"
     metering:
       dimensions:
         - direction: usage
           unit: requests
           scale: 1
           tiers:
-            - price_usd: 0.002
-
-  - method: GET
-    path: /health
+            - price_usd: 0.0001

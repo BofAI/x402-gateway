@@ -3,7 +3,7 @@ name: gateway-ci
 on:
   pull_request:
   push:
-    branches: [main, feature/0.6.1-gateway-init]
+    branches: [main, feature/x402-sdk-ts]
     tags: ["test-v*", "v*"]
   workflow_dispatch:
 
@@ -16,41 +16,27 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.12"]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
+          node-version: "20"
+          cache: npm
 
-      - name: Install package
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Lint
-        run: ruff check src tests
+      - name: Build
+        run: npm run build
 
-      - name: Type check
-        run: mypy src/bankofai/x402_gateway
+      - name: Validate compose file
+        run: docker compose config
 
-      - name: Run non-live tests
-        run: |
-          pytest \
-            tests/unit \
-            tests/smoke/test_upstream_auth.py \
-            -q
-
-      - name: Build package
-        run: |
-          python -m pip install build
-          python -m build
+      - name: Build Docker image
+        run: docker build -t ${{ env.IMAGE_NAME }}:ci .
 
   docker:
     runs-on: ubuntu-latest
@@ -58,14 +44,12 @@ jobs:
     if: github.event_name == 'push' && github.ref_type == 'tag' && (startsWith(github.ref_name, 'test-v') || startsWith(github.ref_name, 'v'))
     env:
       IMAGE_TAG: ${{ startsWith(github.ref_name, 'test-v') && 'test' || github.ref_name }}
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Validate compose file
-        run: docker compose config
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
