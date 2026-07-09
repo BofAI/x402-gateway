@@ -187,7 +187,7 @@ docker run --rm -p 4020:8080 \
   -v "$PWD/providers:/app/providers:ro" \
   -e X402_GATEWAY_ADMIN_TOKEN=<admin-token> \
   -e X402_FACILITATOR_API_KEY=<facilitator-api-key> \
-  bankofai/x402-gateway:<tag>
+  bankofai/x402-gateway:v20260709182145
 ```
 
 The Docker command binds `0.0.0.0:8080` explicitly; local CLI runs default to

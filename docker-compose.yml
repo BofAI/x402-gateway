@@ -1,6 +1,6 @@
 services:
   gateway:
-    image: ${X402_GATEWAY_IMAGE:-bankofai/x402-gateway:test}
+    image: ${X402_GATEWAY_IMAGE:-bankofai/x402-gateway:v20260709182145}
     build:
       context: .
       dockerfile: Dockerfile
