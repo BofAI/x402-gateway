@@ -74,6 +74,15 @@ test("unknown options, missing values, and invalid ports fail clearly", () => {
   assert.equal(unknown.status, 2);
   assert.match(unknown.stderr, /Unknown option/);
 
+  const unknownJson = run(["--provders", "providers", "--json"]);
+  assert.equal(unknownJson.status, 2);
+  assert.equal(JSON.parse(unknownJson.stdout).ok, false);
+  assert.match(JSON.parse(unknownJson.stdout).error.message, /Unknown option/);
+
+  const commandJson = run(["unknown", "--json"]);
+  assert.equal(commandJson.status, 2);
+  assert.match(JSON.parse(commandJson.stdout).error.message, /Unknown command/);
+
   const missing = run(["--providers"]);
   assert.equal(missing.status, 2);
   assert.match(missing.stderr, /requires a value/);
@@ -81,6 +90,14 @@ test("unknown options, missing values, and invalid ports fail clearly", () => {
   const invalidPort = run(["--providers", "providers", "--port", "99999"]);
   assert.equal(invalidPort.status, 2);
   assert.match(invalidPort.stderr, /Invalid --port/);
+
+  const bothSources = run(["--provider", "examples/provider.yml", "--providers", "providers"]);
+  assert.equal(bothSources.status, 2);
+  assert.match(bothSources.stderr, /mutually exclusive/);
+
+  const badHost = run(["--providers", "providers", "--host", "   "]);
+  assert.equal(badHost.status, 2);
+  assert.match(badHost.stderr, /Invalid --host/);
 });
 
 test("check validates providers without starting a server", () => {
@@ -93,16 +110,26 @@ test("check validates providers without starting a server", () => {
     const json = run(["check", "--providers", dir, "--json"]);
     assert.equal(json.status, 0, json.stderr);
     assert.equal(JSON.parse(json.stdout).count, 1);
+
+    const quiet = run(["check", "--providers", dir, "--quiet"]);
+    assert.equal(quiet.status, 0, quiet.stderr);
+    assert.equal(quiet.stdout, "");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("provider loading errors include action and source", () => {
+  const missing = run(["check", "--providers", "/tmp/x402-gateway-missing-provider-dir"]);
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /failed to load providers from \/tmp\/x402-gateway-missing-provider-dir for check/);
 });
 
 test("start prints human-friendly local URLs by default", async () => {
   const dir = providerFixture();
   const blocker = http.createServer((_request, response) => response.end("busy"));
   await new Promise(resolve => blocker.listen(0, "127.0.0.1", resolve));
-  const port = blocker.address().port + 1;
+  const port = blocker.address().port;
   await new Promise(resolve => blocker.close(resolve));
 
   const child = spawn(process.execPath, [cli, "--providers", dir, "--port", String(port)], {
@@ -123,6 +150,54 @@ test("start prints human-friendly local URLs by default", async () => {
   } finally {
     child.kill("SIGTERM");
     await new Promise(resolve => child.on("close", resolve));
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("start json output includes scriptable URLs and source", async () => {
+  const dir = providerFixture();
+  const blocker = http.createServer((_request, response) => response.end("busy"));
+  await new Promise(resolve => blocker.listen(0, "127.0.0.1", resolve));
+  const port = blocker.address().port;
+  await new Promise(resolve => blocker.close(resolve));
+
+  const child = spawn(process.execPath, [cli, "--providers", dir, "--port", String(port), "--json"], {
+    cwd: root,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdout = "";
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", chunk => { stdout += chunk; });
+
+  try {
+    for (let i = 0; i < 20; i += 1) {
+      if (stdout.includes("\"ready\"")) break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    const parsed = JSON.parse(stdout);
+    assert.equal(parsed.ok, true);
+    assert.equal(parsed.source, dir);
+    assert.equal(parsed.count, 1);
+    assert.equal(parsed.health, `http://127.0.0.1:${port}/__402/health`);
+    assert.equal(parsed.ready, `http://127.0.0.1:${port}/__402/ready`);
+  } finally {
+    child.kill("SIGTERM");
+    await new Promise(resolve => child.on("close", resolve));
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("start reports occupied ports clearly", async () => {
+  const dir = providerFixture();
+  const blocker = http.createServer((_request, response) => response.end("busy"));
+  await new Promise(resolve => blocker.listen(0, "127.0.0.1", resolve));
+  const port = blocker.address().port;
+  try {
+    const result = run(["--providers", dir, "--port", String(port)]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, new RegExp(`Port ${port} is already in use`));
+  } finally {
+    await new Promise(resolve => blocker.close(resolve));
     rmSync(dir, { recursive: true, force: true });
   }
 });

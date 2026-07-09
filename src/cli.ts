@@ -66,17 +66,22 @@ function flag(options: Options, key: string): boolean {
   return options[key] === true;
 }
 
-function version(): string {
+function rawHasFlag(argv: string[], name: string, short?: string): boolean {
+  return argv.some(item => item === `--${name}` || item.startsWith(`--${name}=`) || (short ? item === short : false));
+}
+
+function readVersion(): string | undefined {
   try {
     const url = new URL("../package.json", import.meta.url);
-    return String(JSON.parse(fs.readFileSync(url, "utf8")).version ?? "0.0.0");
+    const version = JSON.parse(fs.readFileSync(url, "utf8")).version;
+    return typeof version === "string" && version ? version : undefined;
   } catch {
-    return "0.0.0";
+    return undefined;
   }
 }
 
 function help(): string {
-  return `x402-gateway ${version()}
+  return `x402-gateway ${readVersion() ?? "unknown"}
 
 Usage:
   x402-gateway start --providers <dir> [options]
@@ -107,6 +112,9 @@ Examples:
 }
 
 function providerPath(options: Options): string {
+  if (opt(options, "provider") && opt(options, "providers")) {
+    throw new CliError("Options --provider and --providers are mutually exclusive.");
+  }
   const source = opt(options, "providers", opt(options, "provider", process.env.X402_GATEWAY_PROVIDERS_DIR));
   if (!source) throw new CliError("No provider source configured. Use --provider <file> or --providers <dir>.");
   return source;
@@ -122,26 +130,57 @@ function parsePort(value: string | undefined): number {
   return port;
 }
 
+function parseHost(value: string | undefined): string {
+  const host = value ?? process.env.X402_GATEWAY_HOST ?? "127.0.0.1";
+  if (!host.trim()) throw new CliError("Invalid --host; expected a non-empty host.");
+  return host;
+}
+
+function listenErrorMessage(error: unknown, host: string, port: number): string {
+  const err = error as NodeJS.ErrnoException;
+  if (err?.code === "EADDRINUSE") return `Port ${port} is already in use on ${host}. Choose another --port or stop the existing process.`;
+  if (err?.code === "EADDRNOTAVAIL") return `Host ${host} is not available on this machine. Use --host 127.0.0.1 for local runs or --host 0.0.0.0 in containers.`;
+  return error instanceof Error ? error.message : String(error);
+}
+
 function publicHost(host: string): string {
   return host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host;
 }
 
-function printStartup(options: Options, host: string, port: number, providers: string[]): void {
+function localUrls(host: string, port: number): { base: string; health: string; ready: string } {
+  const base = `http://${publicHost(host)}:${port}`;
+  return {
+    base,
+    health: `${base}/__402/health`,
+    ready: `${base}/__402/ready`,
+  };
+}
+
+function printStartup(options: Options, source: string, host: string, port: number, providers: string[]): void {
   if (flag(options, "quiet")) return;
+  const urls = localUrls(host, port);
   if (flag(options, "json")) {
-    process.stdout.write(JSON.stringify({ ok: true, host, port, providers }, null, 2) + "\n");
+    process.stdout.write(JSON.stringify({ ok: true, source, host, port, count: providers.length, providers, health: urls.health, ready: urls.ready }, null, 2) + "\n");
     return;
   }
-  const base = `http://${publicHost(host)}:${port}`;
-  process.stdout.write(`x402-gateway listening on ${base}\n`);
+  process.stdout.write(`x402-gateway listening on ${urls.base}\n`);
   process.stdout.write(`providers: ${providers.length} loaded\n`);
-  process.stdout.write(`health: ${base}/__402/health\n`);
-  process.stdout.write(`ready: ${base}/__402/ready\n`);
+  process.stdout.write(`health: ${urls.health}\n`);
+  process.stdout.write(`ready: ${urls.ready}\n`);
+}
+
+function loadProvidersForCli(action: "check" | "start", source: string): ReturnType<typeof loadProviders> {
+  try {
+    return loadProviders(source);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`failed to load providers from ${source} for ${action}: ${message}`);
+  }
 }
 
 function check(options: Options): void {
   const source = providerPath(options);
-  const providers = loadProviders(source);
+  const providers = loadProvidersForCli("check", source);
   const summary = [...providers.values()].map(entry => ({
     name: entry.config.name,
     network: entry.config.operator.network,
@@ -151,6 +190,7 @@ function check(options: Options): void {
     process.stdout.write(JSON.stringify({ ok: true, source, count: summary.length, providers: summary }, null, 2) + "\n");
     return;
   }
+  if (flag(options, "quiet")) return;
   process.stdout.write(`ok: ${summary.length} provider${summary.length === 1 ? "" : "s"} loaded from ${source}\n`);
   for (const item of summary) {
     process.stdout.write(`  ${item.name} (${item.network}) endpoints=${item.endpoints}\n`);
@@ -159,21 +199,27 @@ function check(options: Options): void {
 
 async function start(options: Options): Promise<void> {
   const source = providerPath(options);
-  const host = opt(options, "host", process.env.X402_GATEWAY_HOST || "127.0.0.1")!;
+  const host = parseHost(opt(options, "host"));
   const port = parsePort(opt(options, "port"));
-  const providers = loadProviders(source);
+  const providers = loadProvidersForCli("start", source);
   const server = createGatewayServer(providers);
   await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
+    server.once("error", error => reject(new Error(listenErrorMessage(error, host, port))));
     server.listen(port, host, () => {
       server.off("error", reject);
-      printStartup(options, host, port, [...providers.keys()]);
+      printStartup(options, source, host, port, [...providers.keys()]);
       resolve();
     });
   });
   const shutdown = (signal: NodeJS.Signals) => {
     if (!flag(options, "quiet") && !flag(options, "json")) process.stderr.write(`received ${signal}, shutting down...\n`);
+    const timeout = setTimeout(() => {
+      if (!flag(options, "quiet") && !flag(options, "json")) process.stderr.write("server close timed out; exiting\n");
+      process.exit(1);
+    }, 10_000);
+    timeout.unref();
     server.close(() => {
+      clearTimeout(timeout);
       if (!flag(options, "quiet") && !flag(options, "json")) process.stderr.write("server closed\n");
       process.exit(0);
     });
@@ -189,7 +235,9 @@ async function main(): Promise<void> {
     return;
   }
   if (flag(parsed.options, "version")) {
-    process.stdout.write(`${version()}\n`);
+    const version = readVersion();
+    if (!version) throw new Error("Unable to read package version.");
+    process.stdout.write(`${version}\n`);
     return;
   }
   if (parsed.command === "check") check(parsed.options);
@@ -197,20 +245,16 @@ async function main(): Promise<void> {
 }
 
 main().catch(error => {
-  const parsed = (() => {
-    try {
-      return parseArgs(process.argv.slice(2));
-    } catch {
-      return { options: {} as Options };
-    }
-  })();
+  const argv = process.argv.slice(2);
+  const json = rawHasFlag(argv, "json");
+  const debug = rawHasFlag(argv, "debug");
   const message = error instanceof Error ? error.message : String(error);
-  if (flag(parsed.options, "json")) {
+  if (json) {
     process.stdout.write(JSON.stringify({ ok: false, error: { message } }, null, 2) + "\n");
   } else {
     process.stderr.write(`x402-gateway: ${message}\n`);
     process.stderr.write("Run `x402-gateway --help` for usage.\n");
-    if (flag(parsed.options, "debug") && error instanceof Error && error.stack) {
+    if (debug && error instanceof Error && error.stack) {
       process.stderr.write(`${error.stack}\n`);
     }
   }

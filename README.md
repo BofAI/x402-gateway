@@ -45,6 +45,11 @@ x402-gateway check --providers providers
 x402-gateway check --provider examples/provider.yml --json
 ```
 
+`check` validates provider YAML syntax, required fields, environment expansion,
+network aliases, endpoint shape, and duplicate provider names. It does not call
+upstream APIs, facilitator services, RPC endpoints, recipient addresses, or the
+full payment path.
+
 Run from source during development:
 
 ```bash
@@ -81,10 +86,11 @@ Options:
 
 - `--provider <file>`: load one provider YAML file.
 - `--providers <dir>`: recursively load `provider.yml` / `provider.yaml`.
+  `--provider` and `--providers` are mutually exclusive.
 - `--host <host>`: bind host. The CLI default is `127.0.0.1`; Docker passes `0.0.0.0`.
 - `--port <port>`: bind port, default `8080`.
 - `--json`: machine-readable startup/check/error output.
-- `--quiet`: suppress startup and shutdown messages.
+- `--quiet`: suppress startup, shutdown, and successful `check` output.
 - `--debug`: include stack traces for startup errors.
 - `--help`, `--version`: inspect usage and installed version.
 
@@ -96,6 +102,10 @@ providers: 14 loaded
 health: http://127.0.0.1:4020/__402/health
 ready: http://127.0.0.1:4020/__402/ready
 ```
+
+With `--json`, startup output includes `source`, `host`, `port`, `count`,
+`providers`, `health`, and `ready` for deployment scripts. CLI errors also
+honor `--json`, including argument parsing errors such as unknown options.
 
 Admin endpoints such as `/__402/providers`, `/__402/endpoints`, and `/metrics`
 are protected by default. Set `X402_GATEWAY_ADMIN_TOKEN` in deployed
