@@ -4,17 +4,68 @@ import type { ProviderEntry } from "./config.js";
 import { endpointFor, paymentRequirements, priceUsd } from "./config.js";
 import { decodeSignature, encodeRequired, encodeResponse, headers, matchRequirement, type PaymentRequirement } from "./x402.js";
 
+class HttpError extends Error {
+  constructor(public status: number, public publicMessage: string, message = publicMessage) {
+    super(message);
+  }
+}
+
+class RequestTooLargeError extends HttpError {
+  constructor() {
+    super(413, "request body too large");
+  }
+}
+
+const MAX_BODY_BYTES = Number(process.env.X402_GATEWAY_MAX_BODY_BYTES ?? 1_000_000);
+const FACILITATOR_TIMEOUT_MS = Number(process.env.X402_GATEWAY_FACILITATOR_TIMEOUT_MS ?? 10_000);
+const UPSTREAM_TIMEOUT_MS = Number(process.env.X402_GATEWAY_UPSTREAM_TIMEOUT_MS ?? 30_000);
+const STRIP_REQUEST_HEADERS = new Set([
+  "host",
+  "connection",
+  "transfer-encoding",
+  "content-length",
+  "authorization",
+  "proxy-authorization",
+  "cookie",
+  "x-api-key",
+  "api-key",
+  "apikey",
+  "x-auth-token",
+  "x-access-token",
+  "x-payment",
+  "payment-signature",
+  "payment-required",
+  "x-payment-required",
+  "accept-encoding",
+]);
+const STRIP_RESPONSE_HEADERS = new Set([
+  "connection",
+  "transfer-encoding",
+  "content-encoding",
+  "content-length",
+  "authorization",
+  "proxy-authorization",
+  "set-cookie",
+]);
+
 const metrics = {
   requests: 0,
   paidRequests: 0,
   verifyFailures: 0,
   settleFailures: 0,
+  feeQuoteFailures: 0,
   upstreamFailures: 0,
 };
 
 async function readBody(request: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
-  for await (const chunk of request) chunks.push(Buffer.from(chunk));
+  let total = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.from(chunk);
+    total += buffer.length;
+    if (total > MAX_BODY_BYTES) throw new RequestTooLargeError();
+    chunks.push(buffer);
+  }
   return Buffer.concat(chunks);
 }
 
@@ -23,19 +74,38 @@ function json(response: ServerResponse, status: number, body: unknown, extraHead
   response.end(JSON.stringify(body));
 }
 
+async function fetchWithTimeout(url: URL, init: RequestInit, timeoutMs: number, label = "upstream"): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if ((error as any)?.name === "AbortError") throw new HttpError(504, `${label} request timed out`);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function facilitatorPost(entry: ProviderEntry, path: string, body: unknown): Promise<any> {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (entry.facilitatorApiKey) {
     headers.authorization = `Bearer ${entry.facilitatorApiKey}`;
   }
-  const response = await fetch(new URL(path, entry.facilitatorUrl), {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
+  const response = await fetchWithTimeout(
+    new URL(path, entry.facilitatorUrl),
+    { method: "POST", headers, body: JSON.stringify(body) },
+    FACILITATOR_TIMEOUT_MS,
+    "facilitator",
+  );
   const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
-  if (!response.ok) throw new Error(`facilitator ${path} failed: ${response.status} ${text}`);
+  let data: any = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new HttpError(502, "facilitator returned invalid response");
+  }
+  if (!response.ok) throw new HttpError(502, "facilitator request failed", `facilitator ${path} failed: ${response.status} ${text}`);
   return data;
 }
 
@@ -54,14 +124,29 @@ async function attachFeeQuotes(entry: ProviderEntry, requirements: PaymentRequir
       );
       return quote?.fee ? { ...requirement, extra: { ...requirement.extra, fee: quote.fee } } : requirement;
     });
-  } catch {
+  } catch (error) {
+    metrics.feeQuoteFailures += 1;
+    console.warn("fee quote failed", error);
     return requirements;
   }
 }
 
+function isVerifySuccess(verify: any): boolean {
+  return verify?.valid === true || verify?.isValid === true;
+}
+
+function isSettleSuccess(settle: any): boolean {
+  return (
+    settle?.success === true ||
+    settle?.settled === true ||
+    (typeof settle?.transaction === "string" && settle.transaction.length > 0) ||
+    (typeof settle?.txHash === "string" && settle.txHash.length > 0)
+  );
+}
+
 function isAdminAllowed(request: IncomingMessage): boolean {
   const token = process.env.X402_GATEWAY_ADMIN_TOKEN;
-  if (!token) return true;
+  if (!token) return process.env.X402_GATEWAY_ADMIN_ALLOW_PUBLIC === "true";
   const auth = request.headers.authorization ?? "";
   return auth === `Bearer ${token}`;
 }
@@ -92,7 +177,7 @@ function upstreamHeaders(request: IncomingMessage, entry: ProviderEntry): Header
   for (const [key, value] of Object.entries(request.headers)) {
     if (!value) continue;
     const lower = key.toLowerCase();
-    if (["host", "connection", "content-length", "authorization", "payment-signature"].includes(lower)) continue;
+    if (STRIP_REQUEST_HEADERS.has(lower)) continue;
     headersOut.set(key, Array.isArray(value) ? value.join(",") : value);
   }
   const auth = entry.config.routing?.auth;
@@ -118,14 +203,21 @@ function upstreamUrl(entry: ProviderEntry, request: IncomingMessage, routePath: 
 
 async function forward(entry: ProviderEntry, request: IncomingMessage, response: ServerResponse, routePath: string, body: Buffer, paymentResponse?: unknown): Promise<void> {
   const upstream = upstreamUrl(entry, request, routePath);
-  const upstreamResponse = await fetch(upstream, {
-    method: request.method,
-    headers: upstreamHeaders(request, entry),
-    body: ["GET", "HEAD"].includes(request.method ?? "GET") ? undefined : new Uint8Array(body),
-  });
+  let upstreamResponse: Response;
+  try {
+    upstreamResponse = await fetchWithTimeout(upstream, {
+      method: request.method,
+      headers: upstreamHeaders(request, entry),
+      body: ["GET", "HEAD"].includes(request.method ?? "GET") ? undefined : new Uint8Array(body),
+    }, UPSTREAM_TIMEOUT_MS);
+  } catch (error) {
+    metrics.upstreamFailures += 1;
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(502, "upstream request failed");
+  }
   const responseHeaders: Record<string, string> = {};
   upstreamResponse.headers.forEach((value, key) => {
-    if (!["connection", "transfer-encoding", "content-encoding", "content-length"].includes(key.toLowerCase())) {
+    if (!STRIP_RESPONSE_HEADERS.has(key.toLowerCase())) {
       responseHeaders[key] = value;
     }
   });
@@ -144,7 +236,7 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
         return;
       }
       if (url.pathname === "/__402/ready") {
-        json(response, 200, { ok: true, providers: providers.size });
+        json(response, providers.size ? 200 : 503, { ok: providers.size > 0, providers: providers.size });
         return;
       }
       if (url.pathname === "/__402/providers") {
@@ -172,12 +264,14 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
         return;
       }
       if (url.pathname === "/metrics") {
+        if (!isAdminAllowed(request)) return json(response, 401, { error: "unauthorized" });
         response.writeHead(200, { "content-type": "text/plain; version=0.0.4" });
         response.end([
           `x402_gateway_requests_total ${metrics.requests}`,
           `x402_gateway_paid_requests_total ${metrics.paidRequests}`,
           `x402_gateway_verify_failures_total ${metrics.verifyFailures}`,
           `x402_gateway_settle_failures_total ${metrics.settleFailures}`,
+          `x402_gateway_fee_quote_failures_total ${metrics.feeQuoteFailures}`,
           `x402_gateway_upstream_failures_total ${metrics.upstreamFailures}`,
           "",
         ].join("\n"));
@@ -217,7 +311,13 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
         json(response, 402, challenge, { [headers.required]: encodeRequired(challenge) });
         return;
       }
-      const payload = decodeSignature(paymentHeader);
+      let payload;
+      try {
+        payload = decodeSignature(paymentHeader);
+      } catch {
+        json(response, 400, { error: "invalid payment signature" });
+        return;
+      }
       const requirement = requirements.find(item => matchRequirement(payload, item));
       if (!requirement) {
         json(response, 400, { error: "payment does not match any requirement" });
@@ -227,9 +327,9 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
         paymentPayload: payload,
         paymentRequirements: requirement,
       });
-      if (verify?.valid === false || verify?.isValid === false) {
+      if (!isVerifySuccess(verify)) {
         metrics.verifyFailures += 1;
-        json(response, 400, { error: "payment verification failed", verify });
+        json(response, 400, { error: "payment verification failed" });
         return;
       }
       let settle;
@@ -242,10 +342,20 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
         metrics.settleFailures += 1;
         throw error;
       }
+      if (!isSettleSuccess(settle)) {
+        metrics.settleFailures += 1;
+        json(response, 502, { error: "settlement failed" });
+        return;
+      }
       metrics.paidRequests += 1;
       await forward(entry, request, response, routePath, body, settle);
     } catch (error) {
-      json(response, 500, { error: error instanceof Error ? error.message : String(error) });
+      if (error instanceof HttpError) {
+        json(response, error.status, { error: error.publicMessage });
+        return;
+      }
+      console.error(error);
+      json(response, 500, { error: "internal server error" });
     }
   });
 }

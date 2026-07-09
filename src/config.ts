@@ -53,7 +53,10 @@ export type ProviderEntry = {
 };
 
 function expandEnv(value: string): string {
-  return value.replace(/\$\{([^}]+)\}/g, (_, name: string) => process.env[name] ?? "");
+  return value.replace(/\$\{([^}]+)\}/g, (_, name: string) => {
+    if (!(name in process.env)) throw new Error(`environment variable \${${name}} is not set`);
+    return process.env[name] ?? "";
+  });
 }
 
 function expandDeep<T>(value: T): T {
@@ -71,11 +74,61 @@ function assertString(value: unknown, name: string): asserts value is string {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${name} is required`);
 }
 
+function assertHttpUrl(value: string | undefined, name: string): void {
+  if (!value) return;
+  try {
+    const url = new URL(value);
+    if (!["http:", "https:"].includes(url.protocol)) throw new Error("unsupported protocol");
+  } catch {
+    throw new Error(`${name} must be a valid http(s) URL`);
+  }
+}
+
+function validateTiers(tiers: unknown, file: string, path: string): void {
+  if (!Array.isArray(tiers) || !tiers.length) throw new Error(`${file}: ${path}.tiers must contain at least one tier`);
+  for (const [tierIndex, tier] of tiers.entries()) {
+    const price = (tier as any)?.price_usd;
+    if (typeof price !== "number" || !Number.isFinite(price) || price < 0) {
+      throw new Error(`${file}: ${path}.tiers[${tierIndex}].price_usd must be a finite number >= 0`);
+    }
+  }
+}
+
+function validateDimensions(dimensions: unknown, file: string, path: string): void {
+  if (!Array.isArray(dimensions) || !dimensions.length) {
+    throw new Error(`${file}: ${path}.dimensions must contain at least one dimension`);
+  }
+  if (dimensions.length !== 1) throw new Error(`${file}: ${path}.dimensions currently supports exactly one dimension`);
+  for (const [dimensionIndex, dimension] of dimensions.entries()) {
+    validateTiers((dimension as any)?.tiers, file, `${path}.dimensions[${dimensionIndex}]`);
+  }
+}
+
+function validateMetering(endpoint: NonNullable<ProviderConfig["endpoints"]>[number], file: string, path: string): void {
+  if (!endpoint.metering) return;
+  validateDimensions(endpoint.metering.dimensions, file, `${path}.metering`);
+  for (const [variantIndex, variant] of (endpoint.metering.variants ?? []).entries()) {
+    assertString(variant.param, `${file}: ${path}.metering.variants[${variantIndex}].param`);
+    assertString(variant.value, `${file}: ${path}.metering.variants[${variantIndex}].value`);
+    validateDimensions(variant.dimensions, file, `${path}.metering.variants[${variantIndex}]`);
+  }
+}
+
 function validateProvider(config: ProviderConfig, file: string): void {
   assertString(config.name, `${file}: name`);
   assertString(config.forward_url, `${file}: forward_url`);
   assertString(config.operator?.network, `${file}: operator.network`);
   assertString(config.operator?.recipient, `${file}: operator.recipient`);
+  assertHttpUrl(config.forward_url, `${file}: forward_url`);
+  assertHttpUrl(config.operator?.facilitator_url, `${file}: operator.facilitator_url`);
+  if (config.operator?.valid_for_seconds !== undefined &&
+    (!Number.isFinite(config.operator.valid_for_seconds) || config.operator.valid_for_seconds <= 0)) {
+    throw new Error(`${file}: operator.valid_for_seconds must be > 0`);
+  }
+  const authMethod = config.routing?.auth?.method;
+  if (authMethod && !["header", "query_param", "access_token", "oauth2"].includes(authMethod)) {
+    throw new Error(`${file}: unsupported routing.auth.method ${authMethod}`);
+  }
   if (!config.endpoints?.length) throw new Error(`${file}: endpoints must contain at least one endpoint`);
   const seen = new Set<string>();
   for (const [index, endpoint] of config.endpoints.entries()) {
@@ -89,11 +142,7 @@ function validateProvider(config: ProviderConfig, file: string): void {
     const key = `${method} ${endpoint.path}`;
     if (seen.has(key)) throw new Error(`${file}: duplicate endpoint ${key}`);
     seen.add(key);
-    for (const [tierIndex, tier] of (endpoint.metering?.dimensions?.[0]?.tiers ?? []).entries()) {
-      if (typeof tier.price_usd !== "number" || tier.price_usd < 0) {
-        throw new Error(`${file}: endpoints[${index}].metering tier ${tierIndex} price_usd must be >= 0`);
-      }
-    }
+    validateMetering(endpoint, file, `endpoints[${index}]`);
   }
 }
 
@@ -167,8 +216,13 @@ function pathMatches(template: string, routePath: string): boolean {
 }
 
 export function priceUsd(endpoint: ReturnType<typeof endpointFor>, params: Record<string, string> = {}): number {
+  if (!endpoint?.metering) return 0;
   const variant = endpoint?.metering?.variants?.find(item => params[item.param] === item.value);
-  return (variant?.dimensions ?? endpoint?.metering?.dimensions)?.[0]?.tiers?.[0]?.price_usd ?? 0;
+  const price = (variant?.dimensions ?? endpoint.metering.dimensions)?.[0]?.tiers?.[0]?.price_usd;
+  if (typeof price !== "number" || !Number.isFinite(price) || price < 0) {
+    throw new Error(`invalid metering price for ${endpoint.method} ${endpoint.path}`);
+  }
+  return price;
 }
 
 export function paymentRequirements(provider: ProviderConfig, price: number): PaymentRequirement[] {
@@ -179,10 +233,12 @@ export function paymentRequirements(provider: ProviderConfig, price: number): Pa
   return symbols.map(symbol => {
     const token = getToken(network, symbol);
     const transferMethod = provider.operator.assetTransferMethod || provider.operator.asset_transfer_method || token.assetTransferMethod;
+    const amount = toSmallestUnit(price, token.decimals);
+    if (amount === "0") throw new Error(`positive price produced zero amount for ${symbol} on ${network}`);
     return {
       scheme: "exact",
       network,
-      amount: toSmallestUnit(price, token.decimals),
+      amount,
       asset: token.address,
       payTo,
       maxTimeoutSeconds: provider.operator.valid_for_seconds ?? 300,

@@ -43,8 +43,32 @@ export function getToken(network: string, symbol: string): TokenInfo {
   return token;
 }
 
+function numberToDecimalString(amount: number): string {
+  const value = amount.toString();
+  const match = value.match(/^(\d+(?:\.\d+)?)[eE]([+-]?\d+)$/);
+  if (!match) return value;
+
+  const [, coefficient, exponentText] = match;
+  const exponent = Number(exponentText);
+  const [whole, fraction = ""] = coefficient.split(".");
+  const digits = whole + fraction;
+  const decimalIndex = whole.length + exponent;
+
+  if (decimalIndex <= 0) return `0.${"0".repeat(Math.abs(decimalIndex))}${digits}`.replace(/0+$/, "");
+  if (decimalIndex >= digits.length) return `${digits}${"0".repeat(decimalIndex - digits.length)}`;
+  return `${digits.slice(0, decimalIndex)}.${digits.slice(decimalIndex)}`.replace(/0+$/, "").replace(/\.$/, "");
+}
+
 export function toSmallestUnit(amount: number | string, decimals: number): string {
-  const [whole, fraction = ""] = String(amount).split(".");
+  if (!Number.isInteger(decimals) || decimals < 0) throw new Error(`invalid token decimals ${decimals}`);
+  const numeric = typeof amount === "number" ? amount : Number(amount);
+  if (!Number.isFinite(numeric) || numeric < 0) throw new Error(`invalid amount ${amount}`);
+  const value = typeof amount === "number" ? numberToDecimalString(amount) : String(amount);
+  if (!/^\d+(\.\d+)?$/.test(value)) throw new Error(`invalid decimal amount ${amount}`);
+  const [whole, fraction = ""] = value.split(".");
   const padded = (fraction + "0".repeat(decimals)).slice(0, decimals);
-  return (BigInt(whole || "0") * 10n ** BigInt(decimals) + BigInt(padded || "0")).toString();
+  let units = BigInt(whole || "0") * 10n ** BigInt(decimals) + BigInt(padded || "0");
+  if (fraction.length > decimals && /[1-9]/.test(fraction.slice(decimals))) units += 1n;
+  if (numeric > 0 && units === 0n) units = 1n;
+  return units.toString();
 }
