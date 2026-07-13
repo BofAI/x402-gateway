@@ -187,8 +187,12 @@ docker run --rm -p 4020:8080 \
   -v "$PWD/providers:/app/providers:ro" \
   -e X402_GATEWAY_ADMIN_TOKEN=<admin-token> \
   -e X402_FACILITATOR_API_KEY=<facilitator-api-key> \
-  bankofai/x402-gateway:v20260709182145
+  bankofai/x402-gateway:1.0.0
 ```
 
 The Docker command binds `0.0.0.0:8080` explicitly; local CLI runs default to
 `127.0.0.1` unless `--host` or `X402_GATEWAY_HOST` is set.
+
+Use the npm package version for documentation and release notes
+(`@bankofai/x402-gateway@1.0.0`). Date-based image tags are build identifiers
+and may exist in the image registry, but they are not the release version.
