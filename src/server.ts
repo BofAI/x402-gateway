@@ -53,7 +53,6 @@ const metrics = {
   paidRequests: 0,
   verifyFailures: 0,
   settleFailures: 0,
-  feeQuoteFailures: 0,
   upstreamFailures: 0,
 };
 
@@ -90,7 +89,7 @@ async function fetchWithTimeout(url: URL, init: RequestInit, timeoutMs: number, 
 async function facilitatorPost(entry: ProviderEntry, path: string, body: unknown): Promise<any> {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (entry.facilitatorApiKey) {
-    headers.authorization = `Bearer ${entry.facilitatorApiKey}`;
+    headers["x-api-key"] = entry.facilitatorApiKey;
   }
   const response = await fetchWithTimeout(
     new URL(path, entry.facilitatorUrl),
@@ -103,32 +102,39 @@ async function facilitatorPost(entry: ProviderEntry, path: string, body: unknown
   try {
     data = text ? JSON.parse(text) : {};
   } catch {
+    logFacilitatorFailure(entry, path, response, body, { code: "invalid_json" });
     throw new HttpError(502, "facilitator returned invalid response");
   }
-  if (!response.ok) throw new HttpError(502, "facilitator request failed", `facilitator ${path} failed: ${response.status} ${text}`);
+  if (!response.ok) {
+    logFacilitatorFailure(entry, path, response, body, data);
+    throw new HttpError(502, "facilitator request failed", `facilitator ${path} failed: ${response.status}`);
+  }
   return data;
 }
 
-async function attachFeeQuotes(entry: ProviderEntry, requirements: PaymentRequirement[], context?: unknown): Promise<PaymentRequirement[]> {
-  try {
-    const quotes = await facilitatorPost(entry, "/fee_quote", {
-      paymentRequirements: requirements,
-      context,
-    });
-    const list = Array.isArray(quotes) ? quotes : quotes.quotes ?? quotes.fees ?? [];
-    return requirements.map(requirement => {
-      const quote = list.find((item: any) =>
-        item.scheme === requirement.scheme &&
-        item.network === requirement.network &&
-        String(item.asset).toLowerCase() === requirement.asset.toLowerCase(),
-      );
-      return quote?.fee ? { ...requirement, extra: { ...requirement.extra, fee: quote.fee } } : requirement;
-    });
-  } catch (error) {
-    metrics.feeQuoteFailures += 1;
-    console.warn("fee quote failed", error);
-    return requirements;
-  }
+function logFacilitatorFailure(
+  entry: ProviderEntry,
+  path: string,
+  response: Response,
+  body: unknown,
+  data: any,
+): void {
+  const requirement = (body as any)?.paymentRequirements;
+  const nestedError = data?.error && typeof data.error === "object" ? data.error : undefined;
+  const message = nestedError?.message ?? data?.message ?? data?.detail ??
+    (typeof data?.error === "string" ? data.error : undefined);
+  console.error(JSON.stringify({
+    event: "facilitator_request_failed",
+    provider: entry.config.name,
+    endpoint: path,
+    status: response.status,
+    scheme: requirement?.scheme,
+    network: requirement?.network,
+    errorCode: nestedError?.code ?? data?.code,
+    errorMessage: typeof message === "string" ? message.slice(0, 200) : undefined,
+    retryAfter: response.headers.get("retry-after") ?? undefined,
+    cfRay: response.headers.get("cf-ray") ?? undefined,
+  }));
 }
 
 function isVerifySuccess(verify: any): boolean {
@@ -271,7 +277,6 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
           `x402_gateway_paid_requests_total ${metrics.paidRequests}`,
           `x402_gateway_verify_failures_total ${metrics.verifyFailures}`,
           `x402_gateway_settle_failures_total ${metrics.settleFailures}`,
-          `x402_gateway_fee_quote_failures_total ${metrics.feeQuoteFailures}`,
           `x402_gateway_upstream_failures_total ${metrics.upstreamFailures}`,
           "",
         ].join("\n"));
@@ -301,7 +306,7 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
       }
       const paymentHeader = request.headers[headers.signature.toLowerCase()];
       if (!paymentHeader || Array.isArray(paymentHeader)) {
-        const accepts = await attachFeeQuotes(entry, requirements);
+        const accepts = requirements;
         const challenge = {
           x402Version: 2,
           error: "Payment required",

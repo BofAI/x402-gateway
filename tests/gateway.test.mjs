@@ -42,9 +42,10 @@ async function startFacilitator(handlers = {}) {
   return `http://127.0.0.1:${port}`;
 }
 
-async function startGateway({ facilitatorUrl, upstreamUrl, network = "eip155:56", recipient = "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86", scheme = "exact" }) {
+async function startGateway({ facilitatorUrl, upstreamUrl, facilitatorApiKey, network = "eip155:56", recipient = "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86", scheme = "exact" }) {
   const entry = {
     facilitatorUrl,
+    facilitatorApiKey,
     config: {
       name: "paid-provider",
       forward_url: upstreamUrl,
@@ -103,8 +104,26 @@ test("TRON GasFree providers emit exact_gasfree requirements without Permit2 met
   }, 0.000001);
 
   assert.equal(requirements[0].scheme, "exact_gasfree");
-  assert.equal(requirements[0].network, "tron:nile");
+  assert.equal(requirements[0].network, "tron:0xcd8690dc");
   assert.deepEqual(requirements[0].extra, {});
+});
+
+test("TRON providers can advertise Exact Permit2 and GasFree together", () => {
+  const requirements = paymentRequirements({
+    name: "dual-tron-provider",
+    forward_url: "https://example.com",
+    operator: {
+      network: "tron:0x2b6653dc",
+      recipient: "TLXPgJVJFgL97gc49j8w8kC22mDTpH9EGa",
+      schemes: ["exact", "exact_gasfree"],
+      currencies: { usd: ["USDT"] },
+    },
+    endpoints: [],
+  }, 0.000001);
+
+  assert.deepEqual(requirements.map(requirement => requirement.scheme), ["exact", "exact_gasfree"]);
+  assert.deepEqual(requirements[0].extra, { assetTransferMethod: "permit2" });
+  assert.deepEqual(requirements[1].extra, {});
 });
 
 test("admin endpoints and metrics require the admin token", async () => {
@@ -133,18 +152,14 @@ test("unpaid requests return a payment challenge", async () => {
   assert.equal(upstream.hits(), 0);
 });
 
-test("GasFree challenges include facilitator fee quotes", async () => {
+test("GasFree challenges omit legacy facilitator fee quotes", async () => {
   const upstream = await startUpstream();
-  const fee = { feeTo: "TGzz8gjYiYRqpfmDwnLxfgPuLVNmpCswVp", maxAmount: "1000000" };
+  let feeQuoteRequests = 0;
   const facilitatorUrl = await startFacilitator({
-    "/fee_quote": (_request, response) => json(response, 200, {
-      quotes: [{
-        scheme: "exact_gasfree",
-        network: "tron:nile",
-        asset: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
-        fee,
-      }],
-    }),
+    "/fee_quote": (_request, response) => {
+      feeQuoteRequests += 1;
+      json(response, 500, { error: "legacy endpoint must not be called" });
+    },
   });
   const gatewayUrl = await startGateway({
     facilitatorUrl,
@@ -159,8 +174,9 @@ test("GasFree challenges include facilitator fee quotes", async () => {
 
   assert.equal(response.status, 402);
   assert.equal(body.accepts[0].scheme, "exact_gasfree");
-  assert.deepEqual(body.accepts[0].extra.fee, fee);
+  assert.equal(body.accepts[0].extra.fee, undefined);
   assert.equal(body.accepts[0].extra.assetTransferMethod, undefined);
+  assert.equal(feeQuoteRequests, 0);
 });
 
 test("invalid payment signatures are rejected as client errors", async () => {
@@ -199,4 +215,95 @@ test("facilitator verify must explicitly succeed before forwarding", async () =>
 
   assert.equal(response.status, 400);
   assert.equal(upstream.hits(), 0);
+});
+
+test("facilitator failures log status and routing metadata without payment payloads", async () => {
+  const upstream = await startUpstream();
+  const facilitatorUrl = await startFacilitator({
+    "/verify": (_request, response) => json(response, 429, {
+      error: { code: "RATE_LIMITED", message: "try again later" },
+    }),
+  });
+  const gatewayUrl = await startGateway({ facilitatorUrl, upstreamUrl: upstream.url });
+  const signature = encodePaymentSignatureHeader({
+    accepted: {
+      scheme: "exact",
+      network: "eip155:56",
+      amount: "1000000000000",
+      asset: "0x55d398326f99059fF775485246999027B3197955",
+      payTo: "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86",
+    },
+    signature: "sensitive-test-signature",
+  });
+  const messages = [];
+  const originalError = console.error;
+  console.error = message => messages.push(String(message));
+  try {
+    const response = await fetch(`${gatewayUrl}/providers/paid-provider/price/usdt`, {
+      headers: { "PAYMENT-SIGNATURE": signature },
+    });
+    assert.equal(response.status, 502);
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.equal(messages.length, 1);
+  const log = JSON.parse(messages[0]);
+  assert.deepEqual({
+    event: log.event,
+    provider: log.provider,
+    endpoint: log.endpoint,
+    status: log.status,
+    scheme: log.scheme,
+    network: log.network,
+    errorCode: log.errorCode,
+  }, {
+    event: "facilitator_request_failed",
+    provider: "paid-provider",
+    endpoint: "/verify",
+    status: 429,
+    scheme: "exact",
+    network: "eip155:56",
+    errorCode: "RATE_LIMITED",
+  });
+  assert.equal(messages[0].includes("sensitive-test-signature"), false);
+  assert.equal(upstream.hits(), 0);
+});
+
+test("facilitator API keys use the X-API-KEY header", async () => {
+  const upstream = await startUpstream();
+  const receivedKeys = [];
+  const facilitatorUrl = await startFacilitator({
+    "/verify": (request, response) => {
+      receivedKeys.push(request.headers["x-api-key"]);
+      assert.equal(request.headers.authorization, undefined);
+      json(response, 200, { valid: true });
+    },
+    "/settle": (request, response) => {
+      receivedKeys.push(request.headers["x-api-key"]);
+      assert.equal(request.headers.authorization, undefined);
+      json(response, 200, { success: true, transaction: "test-transaction" });
+    },
+  });
+  const gatewayUrl = await startGateway({
+    facilitatorUrl,
+    upstreamUrl: upstream.url,
+    facilitatorApiKey: "secret-facilitator-key",
+  });
+  const signature = encodePaymentSignatureHeader({
+    accepted: {
+      scheme: "exact",
+      network: "eip155:56",
+      amount: "1000000000000",
+      asset: "0x55d398326f99059fF775485246999027B3197955",
+      payTo: "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86",
+    },
+    signature: "test",
+  });
+
+  const response = await fetch(`${gatewayUrl}/providers/paid-provider/price/usdt`, {
+    headers: { "PAYMENT-SIGNATURE": signature },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(receivedKeys, ["secret-facilitator-key", "secret-facilitator-key"]);
 });

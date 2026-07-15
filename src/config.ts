@@ -13,6 +13,7 @@ export type ProviderConfig = {
     currencies?: Record<string, string[]>;
     recipient: string;
     scheme?: string;
+    schemes?: string[];
     protocol?: string;
     asset_transfer_method?: string;
     assetTransferMethod?: string;
@@ -169,18 +170,24 @@ export function loadProvider(file: string): ProviderEntry {
 }
 
 function normalizePaymentProtocol(config: ProviderConfig, file: string): void {
-  const raw = String(config.operator.protocol || config.operator.scheme || "exact").toLowerCase();
-  const normalized = raw.replace(/[-:\s]/g, "_");
-  if (!["exact", "exact_gasfree", "exact_permit", "permit2", "exact_permit2"].includes(normalized)) {
-    throw new Error(`${file}: unsupported x402 protocol ${raw}; use exact or exact_gasfree`);
-  }
-  const scheme = normalized === "exact_gasfree" ? "exact_gasfree" : "exact";
-  if (scheme === "exact_gasfree" && !config.operator.network.startsWith("tron:")) {
+  const rawSchemes = config.operator.schemes?.length
+    ? config.operator.schemes
+    : [config.operator.protocol || config.operator.scheme || "exact"];
+  const schemes = [...new Set(rawSchemes.map(value => {
+    const raw = String(value).toLowerCase();
+    const normalized = raw.replace(/[-:\s]/g, "_");
+    if (!["exact", "exact_gasfree", "exact_permit", "permit2", "exact_permit2"].includes(normalized)) {
+      throw new Error(`${file}: unsupported x402 protocol ${raw}; use exact or exact_gasfree`);
+    }
+    return normalized === "exact_gasfree" ? "exact_gasfree" : "exact";
+  }))];
+  if (schemes.includes("exact_gasfree") && !config.operator.network.startsWith("tron:")) {
     throw new Error(`${file}: exact_gasfree is supported only on TRON networks`);
   }
-  config.operator.scheme = scheme;
-  config.operator.protocol = scheme;
-  if (scheme === "exact") {
+  config.operator.schemes = schemes;
+  config.operator.scheme = schemes[0];
+  config.operator.protocol = schemes[0];
+  if (schemes.includes("exact")) {
     config.operator.asset_transfer_method = "permit2";
     config.operator.assetTransferMethod = "permit2";
   } else {
@@ -239,8 +246,10 @@ export function paymentRequirements(provider: ProviderConfig, price: number): Pa
   const network = normalizeNetwork(provider.operator.network);
   const symbols = provider.operator.currencies?.usd ?? ["USDT"];
   const payTo = provider.recipients?.[provider.operator.recipient]?.account ?? provider.operator.recipient;
-  const scheme = provider.operator.scheme === "exact_gasfree" ? "exact_gasfree" : "exact";
-  return symbols.map(symbol => {
+  const schemes: Array<PaymentRequirement["scheme"]> = provider.operator.schemes?.length
+    ? provider.operator.schemes.map(scheme => scheme === "exact_gasfree" ? "exact_gasfree" : "exact")
+    : [provider.operator.scheme === "exact_gasfree" ? "exact_gasfree" : "exact"];
+  return schemes.flatMap(scheme => symbols.map(symbol => {
     const token = getToken(network, symbol);
     const transferMethod = provider.operator.assetTransferMethod || provider.operator.asset_transfer_method || token.assetTransferMethod;
     const amount = toSmallestUnit(price, token.decimals);
@@ -254,5 +263,5 @@ export function paymentRequirements(provider: ProviderConfig, price: number): Pa
       maxTimeoutSeconds: provider.operator.valid_for_seconds ?? 300,
       extra: scheme === "exact" && transferMethod === "permit2" ? { assetTransferMethod: "permit2" } : {},
     };
-  });
+  }));
 }

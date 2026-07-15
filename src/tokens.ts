@@ -7,11 +7,11 @@ export type TokenInfo = {
 };
 
 export const TOKENS: Record<string, Record<string, TokenInfo>> = {
-  "tron:mainnet": {
+  "tron:0x2b6653dc": {
     USDT: { address: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", decimals: 6, name: "Tether USD", symbol: "USDT", assetTransferMethod: "permit2" },
     USDD: { address: "TXDk8mbtRbXeYuMNS83CfKPaYYT8XWv9Hz", decimals: 18, name: "Decentralized USD", symbol: "USDD", assetTransferMethod: "permit2" },
   },
-  "tron:nile": {
+  "tron:0xcd8690dc": {
     USDT: { address: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf", decimals: 6, name: "Tether USD", symbol: "USDT", assetTransferMethod: "permit2" },
     USDD: { address: "TGjgvdTWWrybVLaVeFqSyVqJQWjxqRYbaK", decimals: 18, name: "Decentralized USD", symbol: "USDD", assetTransferMethod: "permit2" },
   },
@@ -27,9 +27,15 @@ export const TOKENS: Record<string, Record<string, TokenInfo>> = {
 export function normalizeNetwork(network: string): string {
   return (
     {
-      "tron-mainnet": "tron:mainnet",
-      "tron-shasta": "tron:shasta",
-      "tron-nile": "tron:nile",
+      "tron-mainnet": "tron:0x2b6653dc",
+      "tron:mainnet": "tron:0x2b6653dc",
+      "mainnet": "tron:0x2b6653dc",
+      "tron-shasta": "tron:0x94a9059e",
+      "tron:shasta": "tron:0x94a9059e",
+      "shasta": "tron:0x94a9059e",
+      "tron-nile": "tron:0xcd8690dc",
+      "tron:nile": "tron:0xcd8690dc",
+      "nile": "tron:0xcd8690dc",
       "bsc-mainnet": "eip155:56",
       "bsc-testnet": "eip155:97",
     }[network] ?? network

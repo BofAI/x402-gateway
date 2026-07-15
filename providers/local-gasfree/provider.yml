@@ -1,7 +1,8 @@
-name: gasfree-container-test
-forward_url: http://127.0.0.1:65534
+name: local-gasfree
+title: Local GasFree E2E Provider
+forward_url: http://host.docker.internal:44100
 operator:
-  network: tron:nile
+  network: tron:0xcd8690dc
   currencies:
     usd: ["USDT"]
   recipient: TTX1Us19zqsLXhY39PPR7KRUoMa93s3J3i
@@ -9,7 +10,7 @@ operator:
   scheme: exact
   protocol: exact
   asset_transfer_method: permit2
-  facilitator_url: http://127.0.0.1:65534
+  facilitator_url: https://tn-facilitator.bankofai.io
   valid_for_seconds: 300
 endpoints:
   - method: GET
