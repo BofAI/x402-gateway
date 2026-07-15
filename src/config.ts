@@ -171,13 +171,22 @@ export function loadProvider(file: string): ProviderEntry {
 function normalizePaymentProtocol(config: ProviderConfig, file: string): void {
   const raw = String(config.operator.protocol || config.operator.scheme || "exact").toLowerCase();
   const normalized = raw.replace(/[-:\s]/g, "_");
-  if (!["exact", "exact_permit", "permit2", "exact_permit2"].includes(normalized)) {
-    throw new Error(`${file}: unsupported x402 protocol ${raw}; use exact + permit2`);
+  if (!["exact", "exact_gasfree", "exact_permit", "permit2", "exact_permit2"].includes(normalized)) {
+    throw new Error(`${file}: unsupported x402 protocol ${raw}; use exact or exact_gasfree`);
   }
-  config.operator.scheme = "exact";
-  config.operator.protocol = "exact";
-  config.operator.asset_transfer_method = "permit2";
-  config.operator.assetTransferMethod = "permit2";
+  const scheme = normalized === "exact_gasfree" ? "exact_gasfree" : "exact";
+  if (scheme === "exact_gasfree" && !config.operator.network.startsWith("tron:")) {
+    throw new Error(`${file}: exact_gasfree is supported only on TRON networks`);
+  }
+  config.operator.scheme = scheme;
+  config.operator.protocol = scheme;
+  if (scheme === "exact") {
+    config.operator.asset_transfer_method = "permit2";
+    config.operator.assetTransferMethod = "permit2";
+  } else {
+    delete config.operator.asset_transfer_method;
+    delete config.operator.assetTransferMethod;
+  }
 }
 
 export function loadProviders(providerPath: string): Map<string, ProviderEntry> {
@@ -230,19 +239,20 @@ export function paymentRequirements(provider: ProviderConfig, price: number): Pa
   const network = normalizeNetwork(provider.operator.network);
   const symbols = provider.operator.currencies?.usd ?? ["USDT"];
   const payTo = provider.recipients?.[provider.operator.recipient]?.account ?? provider.operator.recipient;
+  const scheme = provider.operator.scheme === "exact_gasfree" ? "exact_gasfree" : "exact";
   return symbols.map(symbol => {
     const token = getToken(network, symbol);
     const transferMethod = provider.operator.assetTransferMethod || provider.operator.asset_transfer_method || token.assetTransferMethod;
     const amount = toSmallestUnit(price, token.decimals);
     if (amount === "0") throw new Error(`positive price produced zero amount for ${symbol} on ${network}`);
     return {
-      scheme: "exact",
+      scheme,
       network,
       amount,
       asset: token.address,
       payTo,
       maxTimeoutSeconds: provider.operator.valid_for_seconds ?? 300,
-      extra: transferMethod === "permit2" ? { assetTransferMethod: "permit2" } : {},
+      extra: scheme === "exact" && transferMethod === "permit2" ? { assetTransferMethod: "permit2" } : {},
     };
   });
 }

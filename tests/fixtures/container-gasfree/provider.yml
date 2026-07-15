@@ -1,0 +1,18 @@
+name: gasfree-container-test
+forward_url: http://127.0.0.1:65534
+operator:
+  network: tron:nile
+  currencies:
+    usd: ["USDT"]
+  recipient: TTX1Us19zqsLXhY39PPR7KRUoMa93s3J3i
+  scheme: exact_gasfree
+  protocol: exact_gasfree
+  facilitator_url: http://127.0.0.1:65534
+  valid_for_seconds: 300
+endpoints:
+  - method: GET
+    path: /v1/ping
+    metering:
+      dimensions:
+        - tiers:
+            - price_usd: 0.000001

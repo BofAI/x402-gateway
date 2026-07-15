@@ -3,6 +3,7 @@ import http from "node:http";
 import { afterEach, beforeEach, test } from "node:test";
 import { encodePaymentSignatureHeader } from "@bankofai/x402-core/http";
 import { createGatewayServer } from "../dist/server.js";
+import { paymentRequirements } from "../dist/config.js";
 import { toSmallestUnit } from "../dist/tokens.js";
 
 let servers = [];
@@ -41,15 +42,16 @@ async function startFacilitator(handlers = {}) {
   return `http://127.0.0.1:${port}`;
 }
 
-async function startGateway({ facilitatorUrl, upstreamUrl }) {
+async function startGateway({ facilitatorUrl, upstreamUrl, network = "eip155:56", recipient = "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86", scheme = "exact" }) {
   const entry = {
     facilitatorUrl,
     config: {
       name: "paid-provider",
       forward_url: upstreamUrl,
       operator: {
-        network: "eip155:56",
-        recipient: "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86",
+        network,
+        recipient,
+        scheme,
         valid_for_seconds: 300,
       },
       endpoints: [
@@ -87,6 +89,24 @@ test("amount conversion handles tiny decimal prices without producing zero", () 
   assert.equal(toSmallestUnit("0.000000000000000001", 18), "1");
 });
 
+test("TRON GasFree providers emit exact_gasfree requirements without Permit2 metadata", () => {
+  const requirements = paymentRequirements({
+    name: "gasfree-provider",
+    forward_url: "https://example.com",
+    operator: {
+      network: "tron:nile",
+      recipient: "TTX1Us19zqsLXhY39PPR7KRUoMa93s3J3i",
+      scheme: "exact_gasfree",
+      currencies: { usd: ["USDT"] },
+    },
+    endpoints: [],
+  }, 0.000001);
+
+  assert.equal(requirements[0].scheme, "exact_gasfree");
+  assert.equal(requirements[0].network, "tron:nile");
+  assert.deepEqual(requirements[0].extra, {});
+});
+
 test("admin endpoints and metrics require the admin token", async () => {
   const upstream = await startUpstream();
   const facilitatorUrl = await startFacilitator();
@@ -111,6 +131,36 @@ test("unpaid requests return a payment challenge", async () => {
   assert.equal(body.accepts[0].network, "eip155:56");
   assert.equal(body.accepts[0].extra.assetTransferMethod, "permit2");
   assert.equal(upstream.hits(), 0);
+});
+
+test("GasFree challenges include facilitator fee quotes", async () => {
+  const upstream = await startUpstream();
+  const fee = { feeTo: "TGzz8gjYiYRqpfmDwnLxfgPuLVNmpCswVp", maxAmount: "1000000" };
+  const facilitatorUrl = await startFacilitator({
+    "/fee_quote": (_request, response) => json(response, 200, {
+      quotes: [{
+        scheme: "exact_gasfree",
+        network: "tron:nile",
+        asset: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
+        fee,
+      }],
+    }),
+  });
+  const gatewayUrl = await startGateway({
+    facilitatorUrl,
+    upstreamUrl: upstream.url,
+    network: "tron:nile",
+    recipient: "TTX1Us19zqsLXhY39PPR7KRUoMa93s3J3i",
+    scheme: "exact_gasfree",
+  });
+
+  const response = await fetch(`${gatewayUrl}/providers/paid-provider/price/usdt`);
+  const body = await response.json();
+
+  assert.equal(response.status, 402);
+  assert.equal(body.accepts[0].scheme, "exact_gasfree");
+  assert.deepEqual(body.accepts[0].extra.fee, fee);
+  assert.equal(body.accepts[0].extra.assetTransferMethod, undefined);
 });
 
 test("invalid payment signatures are rejected as client errors", async () => {

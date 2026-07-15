@@ -3,12 +3,13 @@
 TypeScript reverse proxy for paid HTTP APIs. This version uses the npm
 TypeScript x402 SDK packages only:
 
-- `@bankofai/x402-core@1.0.0`
-- `@bankofai/x402-evm@1.0.0`
-- `@bankofai/x402-tron@1.0.0`
+- `@bankofai/x402-core@1.0.1-beta.2`
+- `@bankofai/x402-evm@1.0.1-beta.2`
+- `@bankofai/x402-tron@1.0.1-beta.2`
 
-Payment requirements are emitted as `scheme=exact`; supported stablecoins add
-`extra.assetTransferMethod=permit2`.
+Payment requirements support `scheme=exact` and TRON `scheme=exact_gasfree`.
+Exact requirements add `extra.assetTransferMethod=permit2`; GasFree requirements
+receive fee terms from the configured facilitator.
 
 ## Install
 
@@ -148,10 +149,11 @@ endpoints:
             - price_usd: 0.002
 ```
 
-`@bankofai/x402-*` 1.0.0 uses `scheme: exact` with
-`extra.assetTransferMethod: permit2` in the payment requirement. Older provider
-configs that say `exact_permit` are normalized at load time, but new provider
-configs should use `protocol: exact` and `asset_transfer_method: permit2`.
+`@bankofai/x402-*` 1.0.1-beta.2 uses `scheme: exact` with
+`extra.assetTransferMethod: permit2`, or TRON `scheme: exact_gasfree`. Older
+provider configs that say `exact_permit` are normalized to `exact`. For GasFree,
+set both `scheme` and `protocol` to `exact_gasfree`; the facilitator must support
+GasFree for the selected TRON network and token.
 
 Network aliases accepted:
 

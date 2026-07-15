@@ -1,6 +1,6 @@
 {
   "name": "@bankofai/x402-gateway",
-  "version": "1.0.0",
+  "version": "1.0.1-beta.0",
   "private": false,
   "type": "module",
   "files": [
@@ -22,9 +22,9 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@bankofai/x402-core": "1.0.0",
-    "@bankofai/x402-evm": "1.0.0",
-    "@bankofai/x402-tron": "1.0.0",
+    "@bankofai/x402-core": "1.0.1-beta.2",
+    "@bankofai/x402-evm": "1.0.1-beta.2",
+    "@bankofai/x402-tron": "1.0.1-beta.2",
     "yaml": "^2.8.2"
   },
   "devDependencies": {

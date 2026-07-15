@@ -11,7 +11,7 @@ export const headers = {
 };
 
 export type PaymentRequirement = {
-  scheme: "exact";
+  scheme: "exact" | "exact_gasfree";
   network: string;
   amount: string;
   asset: string;
