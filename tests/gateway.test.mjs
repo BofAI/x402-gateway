@@ -8,6 +8,7 @@ import { toSmallestUnit } from "../dist/tokens.js";
 
 let servers = [];
 let oldAdminToken;
+let oldPublicBaseUrl;
 
 function listen(server) {
   return new Promise(resolve => {
@@ -74,12 +75,15 @@ async function startGateway({ facilitatorUrl, upstreamUrl, facilitatorApiKey, ne
 
 beforeEach(() => {
   oldAdminToken = process.env.X402_GATEWAY_ADMIN_TOKEN;
+  oldPublicBaseUrl = process.env.X402_GATEWAY_PUBLIC_BASE_URL;
   process.env.X402_GATEWAY_ADMIN_TOKEN = "test-admin";
 });
 
 afterEach(async () => {
   if (oldAdminToken === undefined) delete process.env.X402_GATEWAY_ADMIN_TOKEN;
   else process.env.X402_GATEWAY_ADMIN_TOKEN = oldAdminToken;
+  if (oldPublicBaseUrl === undefined) delete process.env.X402_GATEWAY_PUBLIC_BASE_URL;
+  else process.env.X402_GATEWAY_PUBLIC_BASE_URL = oldPublicBaseUrl;
   await Promise.all(servers.map(server => new Promise(resolve => server.close(resolve))));
   servers = [];
 });
@@ -152,6 +156,22 @@ test("unpaid requests return a payment challenge", async () => {
   assert.equal(upstream.hits(), 0);
 });
 
+test("public base URL produces an absolute challenge resource URL", async () => {
+  process.env.X402_GATEWAY_PUBLIC_BASE_URL = "https://tm-x402-gateway.bankofai.io/";
+  const upstream = await startUpstream();
+  const facilitatorUrl = await startFacilitator();
+  const gatewayUrl = await startGateway({ facilitatorUrl, upstreamUrl: upstream.url });
+
+  const response = await fetch(`${gatewayUrl}/providers/paid-provider/price/usdt?source=qa`);
+  const body = await response.json();
+
+  assert.equal(response.status, 402);
+  assert.equal(
+    body.resource.url,
+    "https://tm-x402-gateway.bankofai.io/providers/paid-provider/price/usdt?source=qa",
+  );
+});
+
 test("GasFree challenges omit legacy facilitator fee quotes", async () => {
   const upstream = await startUpstream();
   let feeQuoteRequests = 0;
@@ -220,9 +240,12 @@ test("facilitator verify must explicitly succeed before forwarding", async () =>
 test("facilitator failures log status and routing metadata without payment payloads", async () => {
   const upstream = await startUpstream();
   const facilitatorUrl = await startFacilitator({
-    "/verify": (_request, response) => json(response, 429, {
-      error: { code: "RATE_LIMITED", message: "try again later" },
-    }),
+    "/verify": (_request, response) => {
+      response.writeHead(429, { "content-type": "application/json", "retry-after": "36" });
+      response.end(JSON.stringify({
+        error: { code: "RATE_LIMITED", message: "try again later" },
+      }));
+    },
   });
   const gatewayUrl = await startGateway({ facilitatorUrl, upstreamUrl: upstream.url });
   const signature = encodePaymentSignatureHeader({
@@ -242,7 +265,9 @@ test("facilitator failures log status and routing metadata without payment paylo
     const response = await fetch(`${gatewayUrl}/providers/paid-provider/price/usdt`, {
       headers: { "PAYMENT-SIGNATURE": signature },
     });
-    assert.equal(response.status, 502);
+    assert.equal(response.status, 429);
+    assert.equal(response.headers.get("retry-after"), "36");
+    assert.deepEqual(await response.json(), { error: "facilitator rate limited" });
   } finally {
     console.error = originalError;
   }

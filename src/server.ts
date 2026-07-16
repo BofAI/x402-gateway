@@ -5,7 +5,12 @@ import { endpointFor, paymentRequirements, priceUsd } from "./config.js";
 import { decodeSignature, encodeRequired, encodeResponse, headers, matchRequirement, type PaymentRequirement } from "./x402.js";
 
 class HttpError extends Error {
-  constructor(public status: number, public publicMessage: string, message = publicMessage) {
+  constructor(
+    public status: number,
+    public publicMessage: string,
+    message = publicMessage,
+    public responseHeaders: Record<string, string> = {},
+  ) {
     super(message);
   }
 }
@@ -107,9 +112,25 @@ async function facilitatorPost(entry: ProviderEntry, path: string, body: unknown
   }
   if (!response.ok) {
     logFacilitatorFailure(entry, path, response, body, data);
+    if (response.status === 429) {
+      const retryAfter = response.headers.get("retry-after");
+      throw new HttpError(
+        429,
+        "facilitator rate limited",
+        `facilitator ${path} rate limited`,
+        retryAfter ? { "retry-after": retryAfter } : {},
+      );
+    }
     throw new HttpError(502, "facilitator request failed", `facilitator ${path} failed: ${response.status}`);
   }
   return data;
+}
+
+function resourceUrl(url: URL): string {
+  const path = `${url.pathname}${url.search}`;
+  const publicBaseUrl = process.env.X402_GATEWAY_PUBLIC_BASE_URL?.trim();
+  if (!publicBaseUrl) return path;
+  return new URL(path, `${publicBaseUrl.replace(/\/+$/, "")}/`).toString();
 }
 
 function logFacilitatorFailure(
@@ -310,7 +331,7 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
         const challenge = {
           x402Version: 2,
           error: "Payment required",
-          resource: { url: url.pathname },
+          resource: { url: resourceUrl(url) },
           accepts,
         };
         json(response, 402, challenge, { [headers.required]: encodeRequired(challenge) });
@@ -356,7 +377,7 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
       await forward(entry, request, response, routePath, body, settle);
     } catch (error) {
       if (error instanceof HttpError) {
-        json(response, error.status, { error: error.publicMessage });
+        json(response, error.status, { error: error.publicMessage }, error.responseHeaders);
         return;
       }
       console.error(error);
