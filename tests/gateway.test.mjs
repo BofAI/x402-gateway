@@ -4,7 +4,7 @@ import { afterEach, beforeEach, test } from "node:test";
 import { encodePaymentSignatureHeader } from "@bankofai/x402-core/http";
 import { createGatewayServer } from "../dist/server.js";
 import { paymentRequirements } from "../dist/config.js";
-import { toSmallestUnit } from "../dist/tokens.js";
+import { normalizeNetwork, toSmallestUnit } from "../dist/tokens.js";
 
 let servers = [];
 let oldAdminToken;
@@ -94,12 +94,19 @@ test("amount conversion handles tiny decimal prices without producing zero", () 
   assert.equal(toSmallestUnit("0.000000000000000001", 18), "1");
 });
 
+test("legacy TRON aliases normalize to canonical CAIP-2 IDs", () => {
+  assert.equal(normalizeNetwork("tron:nile"), "tron:0xcd8690dc");
+  assert.equal(normalizeNetwork("tron-nile"), "tron:0xcd8690dc");
+  assert.equal(normalizeNetwork("tron:mainnet"), "tron:0x2b6653dc");
+  assert.equal(normalizeNetwork("tron:shasta"), "tron:0x94a9059e");
+});
+
 test("TRON GasFree providers emit exact_gasfree requirements without Permit2 metadata", () => {
   const requirements = paymentRequirements({
     name: "gasfree-provider",
     forward_url: "https://example.com",
     operator: {
-      network: "tron:nile",
+      network: "tron:0xcd8690dc",
       recipient: "TTX1Us19zqsLXhY39PPR7KRUoMa93s3J3i",
       scheme: "exact_gasfree",
       currencies: { usd: ["USDT"] },
@@ -184,7 +191,7 @@ test("GasFree challenges omit legacy facilitator fee quotes", async () => {
   const gatewayUrl = await startGateway({
     facilitatorUrl,
     upstreamUrl: upstream.url,
-    network: "tron:nile",
+    network: "tron:0xcd8690dc",
     recipient: "TTX1Us19zqsLXhY39PPR7KRUoMa93s3J3i",
     scheme: "exact_gasfree",
   });

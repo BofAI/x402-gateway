@@ -1,4 +1,4 @@
-name: tron-nile-usdt
+name: example-price-tron
 title: "TRON Nile USDT Provider"
 description: "TRON Nile provider protected by x402 exact Permit2 USDT payment"
 category: data
@@ -8,8 +8,8 @@ forward_url: ${X402_PROVIDER_FORWARD_URL}
 openapi_url: ${X402_PROVIDER_OPENAPI_URL}
 
 display:
-  service_url: ${X402_GATEWAY_PUBLIC_BASE_URL}/providers/tron-nile-usdt
-  tags: ["tron-nile", "usdt", "x402"]
+  service_url: ${X402_GATEWAY_PUBLIC_BASE_URL}/providers/example-price-tron
+  tags: ["nile", "usdt", "x402"]
 
 discovery:
   use_case: "Use for validating TRON Nile USDT x402 payments."
@@ -18,7 +18,7 @@ discovery:
   when_to_use:
     - "Use when testing x402 exact Permit2 payments on TRON Nile."
   request_examples:
-    - "GET /providers/tron-nile-usdt/v1/ping"
+    - "GET /providers/example-price-tron/v1/ping"
 
 routing:
   type: proxy
@@ -29,7 +29,7 @@ routing:
     value_from_env: X402_PROVIDER_API_TOKEN
 
 operator:
-  network: tron-nile
+  network: tron:0xcd8690dc
   currencies:
     usd: ["USDT"]
   recipient: ${X402_PROVIDER_RECIPIENT_TRON}

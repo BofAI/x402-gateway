@@ -66,7 +66,7 @@ curl http://127.0.0.1:4020/__402/health
 Paid provider path:
 
 ```bash
-curl -i http://127.0.0.1:4020/providers/tron-nile-usdt/v1/ping
+curl -i http://127.0.0.1:4020/providers/example-price-tron/v1/ping
 ```
 
 If the endpoint has metering, the gateway returns `402 Payment Required` with a
@@ -118,7 +118,7 @@ deliberately public test deployment, set `X402_GATEWAY_ADMIN_ALLOW_PUBLIC=true`.
 Provider files stay in YAML:
 
 ```yaml
-name: tron-nile-usdt
+name: example-price-tron
 forward_url: ${X402_PROVIDER_FORWARD_URL}
 
 routing:
@@ -129,7 +129,7 @@ routing:
     value_from_env: X402_PROVIDER_API_TOKEN
 
 operator:
-  network: tron-nile
+  network: tron:0xcd8690dc
   currencies:
     usd: ["USDT"]
   recipient: ${X402_PROVIDER_RECIPIENT_TRON}
@@ -149,16 +149,17 @@ endpoints:
             - price_usd: 0.002
 ```
 
-`@bankofai/x402-*` 1.0.1-beta.2 uses `scheme: exact` with
+`@bankofai/x402-*` 1.0.1-beta.4 uses `scheme: exact` with
 `extra.assetTransferMethod: permit2`, or TRON `scheme: exact_gasfree`. Older
 provider configs that say `exact_permit` are normalized to `exact`. For GasFree,
 set both `scheme` and `protocol` to `exact_gasfree`; the facilitator must support
 GasFree for the selected TRON network and token.
 
-Network aliases accepted:
+Legacy network aliases remain accepted for backward compatibility, but new
+provider files should use canonical CAIP-2 IDs:
 
-- `tron-mainnet` -> `tron:mainnet`
-- `tron-nile` -> `tron:nile`
+- `tron-mainnet` -> `tron:0x2b6653dc`
+- `tron-nile` -> `tron:0xcd8690dc`
 - `bsc-mainnet` -> `eip155:56`
 - `bsc-testnet` -> `eip155:97`
 

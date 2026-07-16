@@ -1,7 +1,7 @@
 name: gasfree-container-test
 forward_url: http://127.0.0.1:65534
 operator:
-  network: tron:nile
+  network: tron:0xcd8690dc
   currencies:
     usd: ["USDT"]
   recipient: TTX1Us19zqsLXhY39PPR7KRUoMa93s3J3i

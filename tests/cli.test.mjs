@@ -41,7 +41,7 @@ function providerFixture() {
   writeFileSync(path.join(providerDir, "provider.yml"), `name: demo-provider
 forward_url: http://127.0.0.1:65535
 operator:
-  network: tron-nile
+  network: tron:0xcd8690dc
   recipient: TTX1Us19zqsLXhY39PPR7KRUoMa93s3J3i
   currencies:
     usd: ["USDT"]
