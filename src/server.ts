@@ -21,9 +21,18 @@ class RequestTooLargeError extends HttpError {
   }
 }
 
-const MAX_BODY_BYTES = Number(process.env.X402_GATEWAY_MAX_BODY_BYTES ?? 1_000_000);
-const FACILITATOR_TIMEOUT_MS = Number(process.env.X402_GATEWAY_FACILITATOR_TIMEOUT_MS ?? 10_000);
-const UPSTREAM_TIMEOUT_MS = Number(process.env.X402_GATEWAY_UPSTREAM_TIMEOUT_MS ?? 30_000);
+function positiveIntegerEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  if (!/^\d+$/.test(raw)) throw new Error(`${name} must be a positive integer`);
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`${name} must be a positive integer`);
+  return value;
+}
+
+const MAX_BODY_BYTES = positiveIntegerEnv("X402_GATEWAY_MAX_BODY_BYTES", 1_000_000);
+const FACILITATOR_TIMEOUT_MS = positiveIntegerEnv("X402_GATEWAY_FACILITATOR_TIMEOUT_MS", 10_000);
+const UPSTREAM_TIMEOUT_MS = positiveIntegerEnv("X402_GATEWAY_UPSTREAM_TIMEOUT_MS", 30_000);
 const STRIP_REQUEST_HEADERS = new Set([
   "host",
   "connection",
@@ -249,8 +258,9 @@ async function forward(entry: ProviderEntry, request: IncomingMessage, response:
     }
   });
   if (paymentResponse) responseHeaders[headers.response] = encodeResponse(paymentResponse);
+  const responseBody = Buffer.from(await upstreamResponse.arrayBuffer());
   response.writeHead(upstreamResponse.status, responseHeaders);
-  response.end(Buffer.from(await upstreamResponse.arrayBuffer()));
+  response.end(responseBody);
 }
 
 export function createGatewayServer(providers: Map<string, ProviderEntry>): http.Server {
@@ -374,7 +384,19 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
         return;
       }
       metrics.paidRequests += 1;
-      await forward(entry, request, response, routePath, body, settle);
+      try {
+        await forward(entry, request, response, routePath, body, settle);
+      } catch (error) {
+        const status = error instanceof HttpError ? error.status : 502;
+        const extraHeaders = error instanceof HttpError ? error.responseHeaders : {};
+        json(response, status, {
+          error: "upstream failed after payment settlement",
+          settled: true,
+        }, {
+          ...extraHeaders,
+          [headers.response]: encodeResponse(settle),
+        });
+      }
     } catch (error) {
       if (error instanceof HttpError) {
         json(response, error.status, { error: error.publicMessage }, error.responseHeaders);

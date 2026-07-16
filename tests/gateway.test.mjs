@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import http from "node:http";
 import { afterEach, beforeEach, test } from "node:test";
-import { encodePaymentSignatureHeader } from "@bankofai/x402-core/http";
+import { decodePaymentResponseHeader, encodePaymentSignatureHeader } from "@bankofai/x402-core/http";
 import { createGatewayServer } from "../dist/server.js";
 import { paymentRequirements } from "../dist/config.js";
 import { normalizeNetwork, toSmallestUnit } from "../dist/tokens.js";
@@ -338,4 +338,35 @@ test("facilitator API keys use the X-API-KEY header", async () => {
   });
   assert.equal(response.status, 200);
   assert.deepEqual(receivedKeys, ["secret-facilitator-key", "secret-facilitator-key"]);
+});
+
+test("settled payments retain PAYMENT-RESPONSE when upstream connection fails", async () => {
+  const unavailable = http.createServer();
+  const unavailablePort = await listen(unavailable);
+  await new Promise(resolve => unavailable.close(resolve));
+  const facilitatorUrl = await startFacilitator({
+    "/verify": (_request, response) => json(response, 200, { valid: true }),
+    "/settle": (_request, response) => json(response, 200, { success: true, transaction: "settled-transaction" }),
+  });
+  const gatewayUrl = await startGateway({
+    facilitatorUrl,
+    upstreamUrl: `http://127.0.0.1:${unavailablePort}`,
+  });
+  const signature = encodePaymentSignatureHeader({
+    accepted: {
+      scheme: "exact",
+      network: "eip155:56",
+      amount: "1000000000000",
+      asset: "0x55d398326f99059fF775485246999027B3197955",
+      payTo: "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86",
+    },
+    signature: "test",
+  });
+
+  const response = await fetch(`${gatewayUrl}/providers/paid-provider/price/usdt`, {
+    headers: { "PAYMENT-SIGNATURE": signature },
+  });
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).settled, true);
+  assert.equal(decodePaymentResponseHeader(response.headers.get("PAYMENT-RESPONSE")).transaction, "settled-transaction");
 });
