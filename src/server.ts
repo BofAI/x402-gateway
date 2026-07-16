@@ -60,15 +60,31 @@ const STRIP_RESPONSE_HEADERS = new Set([
   "authorization",
   "proxy-authorization",
   "set-cookie",
+  "payment-required",
+  "x-payment-required",
+  "payment-signature",
+  "x-payment",
+  "payment-response",
+  "x-payment-response",
 ]);
 
-const metrics = {
-  requests: 0,
-  paidRequests: 0,
-  verifyFailures: 0,
-  settleFailures: 0,
-  upstreamFailures: 0,
+type GatewayMetrics = {
+  requests: number;
+  paidRequests: number;
+  verifyFailures: number;
+  settleFailures: number;
+  upstreamFailures: number;
 };
+
+function createMetrics(): GatewayMetrics {
+  return {
+    requests: 0,
+    paidRequests: 0,
+    verifyFailures: 0,
+    settleFailures: 0,
+    upstreamFailures: 0,
+  };
+}
 
 async function readBody(request: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -248,7 +264,7 @@ function upstreamUrl(entry: ProviderEntry, request: IncomingMessage, routePath: 
   return upstream;
 }
 
-async function forward(entry: ProviderEntry, request: IncomingMessage, response: ServerResponse, routePath: string, body: Buffer, paymentResponse?: unknown): Promise<void> {
+async function forward(metrics: GatewayMetrics, entry: ProviderEntry, request: IncomingMessage, response: ServerResponse, routePath: string, body: Buffer, paymentResponse?: unknown): Promise<void> {
   const upstream = upstreamUrl(entry, request, routePath);
   let upstreamResponse: Response;
   try {
@@ -276,6 +292,7 @@ async function forward(entry: ProviderEntry, request: IncomingMessage, response:
 
 export function createGatewayServer(providers: Map<string, ProviderEntry>): http.Server {
   const publicBaseUrl = configuredPublicBaseUrl();
+  const metrics = createMetrics();
   return http.createServer(async (request, response) => {
     try {
       metrics.requests += 1;
@@ -344,7 +361,7 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
       const body = await readBody(request);
       const requirements = paymentRequirements(entry.config, priceUsd(endpoint, requestParams(url, body, request)));
       if (!requirements.length) {
-        await forward(entry, request, response, routePath, body);
+        await forward(metrics, entry, request, response, routePath, body);
         return;
       }
       const paymentHeader = request.headers[headers.signature.toLowerCase()];
@@ -397,7 +414,7 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
       }
       metrics.paidRequests += 1;
       try {
-        await forward(entry, request, response, routePath, body, settle);
+        await forward(metrics, entry, request, response, routePath, body, settle);
       } catch (error) {
         const status = error instanceof HttpError ? error.status : 502;
         const extraHeaders = error instanceof HttpError ? error.responseHeaders : {};

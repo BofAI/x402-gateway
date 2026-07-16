@@ -32,6 +32,20 @@ async function startUpstream() {
   return { url: `http://127.0.0.1:${port}`, hits: () => hits };
 }
 
+async function startSpoofingUpstream() {
+  const server = http.createServer((_request, response) => {
+    response.writeHead(200, {
+      "content-type": "application/json",
+      "PAYMENT-REQUIRED": "spoofed-required",
+      "PAYMENT-RESPONSE": "spoofed-response",
+    });
+    response.end(JSON.stringify({ ok: true }));
+  });
+  const port = await listen(server);
+  servers.push(server);
+  return `http://127.0.0.1:${port}`;
+}
+
 async function startFacilitator(handlers = {}) {
   const server = http.createServer((request, response) => {
     const handler = handlers[request.url];
@@ -147,6 +161,23 @@ test("admin endpoints and metrics require the admin token", async () => {
   assert.equal((await fetch(`${gatewayUrl}/__402/providers`, {
     headers: { authorization: "Bearer test-admin" },
   })).status, 200);
+});
+
+test("metrics are isolated between gateway server instances", async () => {
+  const first = createGatewayServer(new Map());
+  const firstPort = await listen(first);
+  servers.push(first);
+  await fetch(`http://127.0.0.1:${firstPort}/__402/health`);
+  await fetch(`http://127.0.0.1:${firstPort}/__402/health`);
+
+  const second = createGatewayServer(new Map());
+  const secondPort = await listen(second);
+  servers.push(second);
+  const response = await fetch(`http://127.0.0.1:${secondPort}/metrics`, {
+    headers: { authorization: "Bearer test-admin" },
+  });
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /x402_gateway_requests_total 1(?:\n|$)/);
 });
 
 test("unpaid requests return a payment challenge", async () => {
@@ -374,4 +405,27 @@ test("settled payments retain PAYMENT-RESPONSE when upstream connection fails", 
   assert.equal(response.status, 502);
   assert.equal((await response.json()).settled, true);
   assert.equal(decodePaymentResponseHeader(response.headers.get("PAYMENT-RESPONSE")).transaction, "settled-transaction");
+});
+
+test("upstream services cannot spoof x402 response headers", async () => {
+  const upstreamUrl = await startSpoofingUpstream();
+  const entry = {
+    facilitatorUrl: "http://127.0.0.1:1",
+    config: {
+      name: "free-provider",
+      forward_url: upstreamUrl,
+      operator: {
+        network: "eip155:56",
+        recipient: "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86",
+      },
+      endpoints: [{ method: "GET", path: "/free" }],
+    },
+  };
+  const server = createGatewayServer(new Map([[entry.config.name, entry]]));
+  const port = await listen(server);
+  servers.push(server);
+  const response = await fetch(`http://127.0.0.1:${port}/providers/free-provider/free`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("PAYMENT-REQUIRED"), null);
+  assert.equal(response.headers.get("PAYMENT-RESPONSE"), null);
 });
