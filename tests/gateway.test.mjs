@@ -179,6 +179,11 @@ test("public base URL produces an absolute challenge resource URL", async () => 
   );
 });
 
+test("invalid public base URL is rejected at startup", () => {
+  process.env.X402_GATEWAY_PUBLIC_BASE_URL = "not-a-url";
+  assert.throws(() => createGatewayServer(new Map()), /must be a valid http\(s\) URL/);
+});
+
 test("GasFree challenges omit legacy facilitator fee quotes", async () => {
   const upstream = await startUpstream();
   let feeQuoteRequests = 0;

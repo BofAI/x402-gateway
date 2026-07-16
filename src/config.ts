@@ -152,17 +152,23 @@ export function loadProvider(file: string): ProviderEntry {
   validateProvider(config, file);
   config.operator.network = normalizeNetwork(config.operator.network);
   normalizePaymentProtocol(config, file);
+  const facilitatorUrl =
+    config.operator.facilitator_url ||
+    process.env.X402_FACILITATOR_URL ||
+    process.env.FACILITATOR_URL ||
+    "https://facilitator.bankofai.io";
+  assertHttpUrl(facilitatorUrl, `${file}: facilitator URL`);
+  const configuredApiKeyEnv = config.operator.facilitator_api_key_env;
+  if (configuredApiKeyEnv && !process.env[configuredApiKeyEnv]) {
+    throw new Error(`${file}: environment variable ${configuredApiKeyEnv} is not set`);
+  }
   return {
     config,
-    facilitatorUrl:
-      config.operator.facilitator_url ||
-      process.env.X402_FACILITATOR_URL ||
-      process.env.FACILITATOR_URL ||
-      "https://facilitator.bankofai.io",
+    facilitatorUrl,
     facilitatorApiKey:
       config.operator.facilitator_api_key ||
-      (config.operator.facilitator_api_key_env
-        ? process.env[config.operator.facilitator_api_key_env]
+      (configuredApiKeyEnv
+        ? process.env[configuredApiKeyEnv]
         : undefined) ||
       process.env.X402_FACILITATOR_API_KEY ||
       process.env.FACILITATOR_API_KEY,

@@ -93,7 +93,7 @@ async function fetchWithTimeout(url: URL, init: RequestInit, timeoutMs: number, 
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } catch (error) {
-    if ((error as any)?.name === "AbortError") throw new HttpError(504, `${label} request timed out`);
+    if (error instanceof Error && error.name === "AbortError") throw new HttpError(504, `${label} request timed out`);
     throw error;
   } finally {
     clearTimeout(timer);
@@ -135,11 +135,22 @@ async function facilitatorPost(entry: ProviderEntry, path: string, body: unknown
   return data;
 }
 
-function resourceUrl(url: URL): string {
+function configuredPublicBaseUrl(): string | undefined {
+  const value = process.env.X402_GATEWAY_PUBLIC_BASE_URL?.trim();
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    if (!["http:", "https:"].includes(url.protocol)) throw new Error("unsupported protocol");
+    return `${value.replace(/\/+$/, "")}/`;
+  } catch {
+    throw new Error("X402_GATEWAY_PUBLIC_BASE_URL must be a valid http(s) URL");
+  }
+}
+
+function resourceUrl(url: URL, publicBaseUrl?: string): string {
   const path = `${url.pathname}${url.search}`;
-  const publicBaseUrl = process.env.X402_GATEWAY_PUBLIC_BASE_URL?.trim();
   if (!publicBaseUrl) return path;
-  return new URL(path, `${publicBaseUrl.replace(/\/+$/, "")}/`).toString();
+  return new URL(path, publicBaseUrl).toString();
 }
 
 function logFacilitatorFailure(
@@ -264,6 +275,7 @@ async function forward(entry: ProviderEntry, request: IncomingMessage, response:
 }
 
 export function createGatewayServer(providers: Map<string, ProviderEntry>): http.Server {
+  const publicBaseUrl = configuredPublicBaseUrl();
   return http.createServer(async (request, response) => {
     try {
       metrics.requests += 1;
@@ -341,7 +353,7 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
         const challenge = {
           x402Version: 2,
           error: "Payment required",
-          resource: { url: resourceUrl(url) },
+          resource: { url: resourceUrl(url, publicBaseUrl) },
           accepts,
         };
         json(response, 402, challenge, { [headers.required]: encodeRequired(challenge) });

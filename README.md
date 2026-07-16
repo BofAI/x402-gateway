@@ -3,13 +3,13 @@
 TypeScript reverse proxy for paid HTTP APIs. This version uses the npm
 TypeScript x402 SDK packages only:
 
-- `@bankofai/x402-core@1.0.1-beta.2`
-- `@bankofai/x402-evm@1.0.1-beta.2`
-- `@bankofai/x402-tron@1.0.1-beta.2`
+- `@bankofai/x402-core@1.0.1-beta.4`
+- `@bankofai/x402-evm@1.0.1-beta.4`
+- `@bankofai/x402-tron@1.0.1-beta.4`
 
 Payment requirements support `scheme=exact` and TRON `scheme=exact_gasfree`.
 Exact requirements add `extra.assetTransferMethod=permit2`; GasFree requirements
-receive fee terms from the configured facilitator.
+use the TRON GasFree relayer flow without Permit2 metadata.
 
 ## Install
 
@@ -170,6 +170,10 @@ X402_GATEWAY_PROVIDERS_DIR=providers
 X402_GATEWAY_HOST=127.0.0.1
 PORT=8080
 X402_GATEWAY_ADMIN_TOKEN=<admin-token>
+X402_GATEWAY_PUBLIC_BASE_URL=https://gateway.example.com
+X402_GATEWAY_MAX_BODY_BYTES=1000000
+X402_GATEWAY_FACILITATOR_TIMEOUT_MS=10000
+X402_GATEWAY_UPSTREAM_TIMEOUT_MS=30000
 X402_FACILITATOR_URL=https://facilitator-v2.bankofai.io
 X402_FACILITATOR_API_KEY=<facilitator-api-key>
 X402_PROVIDER_FORWARD_URL=<upstream-base-url>
@@ -180,6 +184,13 @@ X402_PROVIDER_API_TOKEN=<upstream-token>
 Provider YAML may also use `operator.facilitator_api_key_env:
 X402_FACILITATOR_API_KEY` so deployments can inject the facilitator API key via
 environment variable without storing it in the mounted provider file.
+When `facilitator_api_key_env` is configured, that named variable is required;
+`check` and `start` fail instead of silently contacting the facilitator without
+authentication.
+
+`X402_GATEWAY_PUBLIC_BASE_URL` must be the externally reachable gateway origin.
+It makes the challenge `resource.url` absolute, which is required when the
+container's internal host or request path is not the public payment URL.
 
 ## Docker
 
@@ -190,7 +201,7 @@ docker run --rm -p 4020:8080 \
   -v "$PWD/providers:/app/providers:ro" \
   -e X402_GATEWAY_ADMIN_TOKEN=<admin-token> \
   -e X402_FACILITATOR_API_KEY=<facilitator-api-key> \
-  bankofai/x402-gateway:v20260709182145
+  <gateway-image>
 ```
 
 The Docker command binds `0.0.0.0:8080` explicitly; local CLI runs default to
