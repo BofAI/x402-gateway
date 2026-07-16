@@ -155,11 +155,11 @@ provider configs that say `exact_permit` are normalized to `exact`. For GasFree,
 set both `scheme` and `protocol` to `exact_gasfree`; the facilitator must support
 GasFree for the selected TRON network and token.
 
-Legacy network aliases remain accepted for backward compatibility, but new
-provider files should use canonical CAIP-2 IDs:
+Non-CAIP TRON aliases are rejected. Provider files must use canonical TRON
+CAIP-2 IDs.
 
-- `tron-mainnet` -> `tron:0x2b6653dc`
-- `tron-nile` -> `tron:0xcd8690dc`
+EVM convenience aliases accepted:
+
 - `bsc-mainnet` -> `eip155:56`
 - `bsc-testnet` -> `eip155:97`
 

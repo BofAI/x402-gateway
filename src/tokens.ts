@@ -25,21 +25,25 @@ export const TOKENS: Record<string, Record<string, TokenInfo>> = {
 };
 
 export function normalizeNetwork(network: string): string {
-  return (
-    {
-      "tron-mainnet": "tron:0x2b6653dc",
-      "tron:mainnet": "tron:0x2b6653dc",
-      "mainnet": "tron:0x2b6653dc",
-      "tron-shasta": "tron:0x94a9059e",
-      "tron:shasta": "tron:0x94a9059e",
-      "shasta": "tron:0x94a9059e",
-      "tron-nile": "tron:0xcd8690dc",
-      "tron:nile": "tron:0xcd8690dc",
-      "nile": "tron:0xcd8690dc",
-      "bsc-mainnet": "eip155:56",
-      "bsc-testnet": "eip155:97",
-    }[network] ?? network
-  );
+  const legacyTronIds: Record<string, string> = {
+    "tron-mainnet": "tron:0x2b6653dc",
+    "tron:mainnet": "tron:0x2b6653dc",
+    mainnet: "tron:0x2b6653dc",
+    "tron-shasta": "tron:0x94a9059e",
+    "tron:shasta": "tron:0x94a9059e",
+    shasta: "tron:0x94a9059e",
+    "tron-nile": "tron:0xcd8690dc",
+    "tron:nile": "tron:0xcd8690dc",
+    nile: "tron:0xcd8690dc",
+  };
+  const canonical = legacyTronIds[network];
+  if (canonical) {
+    throw new Error(`legacy TRON network identifier ${network} is not supported; use ${canonical}`);
+  }
+  return {
+    "bsc-mainnet": "eip155:56",
+    "bsc-testnet": "eip155:97",
+  }[network] ?? network;
 }
 
 export function getToken(network: string, symbol: string): TokenInfo {
