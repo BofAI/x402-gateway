@@ -26,13 +26,14 @@ function positiveIntegerEnv(name: string, fallback: number): number {
   if (raw === undefined || raw === "") return fallback;
   if (!/^\d+$/.test(raw)) throw new Error(`${name} must be a positive integer`);
   const value = Number(raw);
-  if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`${name} must be a positive integer`);
+  if (!Number.isSafeInteger(value) || value <= 0 || value > 2_147_483_647) throw new Error(`${name} must be an integer between 1 and 2147483647`);
   return value;
 }
 
 const MAX_BODY_BYTES = positiveIntegerEnv("X402_GATEWAY_MAX_BODY_BYTES", 1_000_000);
 const FACILITATOR_TIMEOUT_MS = positiveIntegerEnv("X402_GATEWAY_FACILITATOR_TIMEOUT_MS", 10_000);
 const UPSTREAM_TIMEOUT_MS = positiveIntegerEnv("X402_GATEWAY_UPSTREAM_TIMEOUT_MS", 30_000);
+const MAX_RESPONSE_BYTES = positiveIntegerEnv("X402_GATEWAY_MAX_RESPONSE_BYTES", 10_000_000);
 const STRIP_REQUEST_HEADERS = new Set([
   "host",
   "connection",
@@ -50,6 +51,8 @@ const STRIP_REQUEST_HEADERS = new Set([
   "payment-signature",
   "payment-required",
   "x-payment-required",
+  "payment-response",
+  "x-payment-response",
   "accept-encoding",
 ]);
 const STRIP_RESPONSE_HEADERS = new Set([
@@ -99,7 +102,7 @@ async function readBody(request: IncomingMessage): Promise<Buffer> {
 }
 
 function json(response: ServerResponse, status: number, body: unknown, extraHeaders: Record<string, string> = {}): void {
-  response.writeHead(status, { "content-type": "application/json", ...extraHeaders });
+  response.writeHead(status, { "content-type": "application/json", "cache-control": "no-store", "x-content-type-options": "nosniff", ...extraHeaders });
   response.end(JSON.stringify(body));
 }
 
@@ -107,7 +110,9 @@ async function fetchWithTimeout(url: URL, init: RequestInit, timeoutMs: number, 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    const response = await fetch(url, { ...init, redirect: "manual", signal: controller.signal });
+    if (response.status >= 300 && response.status < 400) throw new HttpError(502, `${label} redirect refused`);
+    return response;
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") throw new HttpError(504, `${label} request timed out`);
     throw error;
@@ -116,18 +121,33 @@ async function fetchWithTimeout(url: URL, init: RequestInit, timeoutMs: number, 
   }
 }
 
+async function readResponseBytes(response: Response, limit = MAX_RESPONSE_BYTES): Promise<Buffer> {
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > limit) throw new HttpError(502, "upstream response too large");
+  if (!response.body) return Buffer.alloc(0);
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of response.body) {
+    const buffer = Buffer.from(chunk);
+    total += buffer.length;
+    if (total > limit) throw new HttpError(502, "upstream response too large");
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks);
+}
+
 async function facilitatorPost(entry: ProviderEntry, path: string, body: unknown): Promise<any> {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (entry.facilitatorApiKey) {
     headers["x-api-key"] = entry.facilitatorApiKey;
   }
   const response = await fetchWithTimeout(
-    new URL(path, entry.facilitatorUrl),
+    new URL(path.replace(/^\/+/, ""), `${entry.facilitatorUrl.replace(/\/+$/, "")}/`),
     { method: "POST", headers, body: JSON.stringify(body) },
     FACILITATOR_TIMEOUT_MS,
     "facilitator",
   );
-  const text = await response.text();
+  const text = (await readResponseBytes(response, Math.min(MAX_RESPONSE_BYTES, 1_000_000))).toString("utf8");
   let data: any = {};
   try {
     data = text ? JSON.parse(text) : {};
@@ -199,13 +219,7 @@ function isVerifySuccess(verify: any): boolean {
 }
 
 function isSettleSuccess(settle: any): boolean {
-  if (settle?.success === false || settle?.settled === false) return false;
-  return (
-    settle?.success === true ||
-    settle?.settled === true ||
-    (typeof settle?.transaction === "string" && settle.transaction.length > 0) ||
-    (typeof settle?.txHash === "string" && settle.txHash.length > 0)
-  );
+  return settle?.success === true && typeof settle?.transaction === "string" && settle.transaction.length > 0 && typeof settle?.network === "string" && settle.network.length > 0;
 }
 
 function isAdminAllowed(request: IncomingMessage): boolean {
@@ -238,10 +252,11 @@ function requestParams(url: URL, body: Buffer, request: IncomingMessage): Record
 
 function upstreamHeaders(request: IncomingMessage, entry: ProviderEntry): Headers {
   const headersOut = new Headers();
+  const connectionHeaders = new Set(String(request.headers.connection ?? "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean));
   for (const [key, value] of Object.entries(request.headers)) {
     if (!value) continue;
     const lower = key.toLowerCase();
-    if (STRIP_REQUEST_HEADERS.has(lower)) continue;
+    if (STRIP_REQUEST_HEADERS.has(lower) || connectionHeaders.has(lower)) continue;
     headersOut.set(key, Array.isArray(value) ? value.join(",") : value);
   }
   const auth = entry.config.routing?.auth;
@@ -256,7 +271,12 @@ function upstreamHeaders(request: IncomingMessage, entry: ProviderEntry): Header
 
 function upstreamUrl(entry: ProviderEntry, request: IncomingMessage, routePath: string): URL {
   const sourceUrl = new URL(request.url ?? "/", "http://local");
-  const upstream = new URL(routePath + (sourceUrl.search || ""), entry.config.forward_url);
+  if (!routePath.startsWith("/") || routePath.startsWith("//") || routePath.includes("\\") || routePath.includes("\0") || /%(?:2f|5c)/i.test(routePath)) throw new HttpError(400, "invalid provider path");
+  const base = new URL(entry.config.forward_url);
+  const upstream = new URL(base);
+  upstream.pathname = routePath;
+  upstream.search = sourceUrl.search;
+  if (upstream.origin !== base.origin) throw new HttpError(400, "invalid provider path");
   const auth = entry.config.routing?.auth;
   const value = auth?.value ?? (auth?.value_from_env ? process.env[auth.value_from_env] : undefined);
   if (auth?.method === "query_param" && value) {
@@ -286,7 +306,7 @@ async function forward(metrics: GatewayMetrics, entry: ProviderEntry, request: I
     }
   });
   if (paymentResponse) responseHeaders[headers.response] = encodeResponse(paymentResponse);
-  const responseBody = Buffer.from(await upstreamResponse.arrayBuffer());
+  const responseBody = await readResponseBytes(upstreamResponse);
   response.writeHead(upstreamResponse.status, responseHeaders);
   response.end(responseBody);
 }
@@ -360,7 +380,9 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
         return;
       }
       const body = await readBody(request);
-      const requirements = paymentRequirements(entry.config, priceUsd(endpoint, requestParams(url, body, request)));
+      const price = priceUsd(endpoint, requestParams(url, body, request));
+      const requirements = paymentRequirements(entry.config, price);
+      if (price > 0 && !requirements.length) throw new HttpError(500, "paid endpoint has no payment requirements");
       if (!requirements.length) {
         await forward(metrics, entry, request, response, routePath, body);
         return;

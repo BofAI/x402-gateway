@@ -380,7 +380,7 @@ test("facilitator API keys use the X-API-KEY header", async () => {
     "/settle": (request, response) => {
       receivedKeys.push(request.headers["x-api-key"]);
       assert.equal(request.headers.authorization, undefined);
-      json(response, 200, { success: true, transaction: "test-transaction" });
+      json(response, 200, { success: true, transaction: "test-transaction", network: "eip155:56" });
     },
   });
   const gatewayUrl = await startGateway({
@@ -412,7 +412,7 @@ test("settled payments retain PAYMENT-RESPONSE when upstream connection fails", 
   await new Promise(resolve => unavailable.close(resolve));
   const facilitatorUrl = await startFacilitator({
     "/verify": (_request, response) => json(response, 200, { valid: true }),
-    "/settle": (_request, response) => json(response, 200, { success: true, transaction: "settled-transaction" }),
+    "/settle": (_request, response) => json(response, 200, { success: true, transaction: "settled-transaction", network: "eip155:56" }),
   });
   const gatewayUrl = await startGateway({
     facilitatorUrl,
@@ -458,4 +458,35 @@ test("upstream services cannot spoof x402 response headers", async () => {
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("PAYMENT-REQUIRED"), null);
   assert.equal(response.headers.get("PAYMENT-RESPONSE"), null);
+});
+
+test("upstream redirects are not followed", async () => {
+  let redirectedHits = 0;
+  const redirected = http.createServer((_request, response) => {
+    redirectedHits += 1;
+    json(response, 200, { leaked: true });
+  });
+  const redirectedPort = await listen(redirected);
+  servers.push(redirected);
+  const redirector = http.createServer((_request, response) => {
+    response.writeHead(302, { location: `http://127.0.0.1:${redirectedPort}/secret` });
+    response.end();
+  });
+  const redirectorPort = await listen(redirector);
+  servers.push(redirector);
+  const entry = {
+    facilitatorUrl: "http://127.0.0.1:1",
+    config: {
+      name: "redirect-provider",
+      forward_url: `http://127.0.0.1:${redirectorPort}`,
+      operator: { network: "eip155:56", recipient: "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86" },
+      endpoints: [{ method: "GET", path: "/free" }],
+    },
+  };
+  const server = createGatewayServer(new Map([[entry.config.name, entry]]));
+  const port = await listen(server);
+  servers.push(server);
+  const response = await fetch(`http://127.0.0.1:${port}/providers/redirect-provider/free`);
+  assert.equal(response.status, 502);
+  assert.equal(redirectedHits, 0);
 });

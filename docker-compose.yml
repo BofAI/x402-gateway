@@ -1,6 +1,7 @@
 services:
   gateway:
-    image: ${X402_GATEWAY_IMAGE:-bankofai/x402-gateway:v20260709182145}
+    image: ${X402_GATEWAY_IMAGE:-bankofai/x402-gateway:test}
+    pull_policy: always
     build:
       context: .
       dockerfile: Dockerfile

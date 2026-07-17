@@ -1,6 +1,6 @@
 {
   "name": "@bankofai/x402-gateway",
-  "version": "1.0.1-beta.6",
+  "version": "1.0.1-beta.7",
   "private": false,
   "type": "module",
   "files": [

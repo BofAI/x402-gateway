@@ -80,6 +80,10 @@ function assertHttpUrl(value: string | undefined, name: string): void {
   try {
     const url = new URL(value);
     if (!["http:", "https:"].includes(url.protocol)) throw new Error("unsupported protocol");
+    if (url.username || url.password || url.search || url.hash) throw new Error("credentials, query, and fragment are not allowed");
+    if (url.protocol === "http:" && !["localhost", "127.0.0.1", "::1"].includes(url.hostname) && process.env.X402_GATEWAY_ALLOW_INSECURE_HTTP !== "true") {
+      throw new Error("remote HTTP is not allowed");
+    }
   } catch {
     throw new Error(`${name} must be a valid http(s) URL`);
   }
@@ -130,6 +134,11 @@ function validateProvider(config: ProviderConfig, file: string): void {
   if (authMethod && !["header", "query_param", "access_token", "oauth2"].includes(authMethod)) {
     throw new Error(`${file}: unsupported routing.auth.method ${authMethod}`);
   }
+  const auth = config.routing?.auth;
+  if (auth) {
+    if (!auth.value && !auth.value_from_env) throw new Error(`${file}: routing.auth requires value or value_from_env`);
+    if (auth.value_from_env && !process.env[auth.value_from_env]) throw new Error(`${file}: environment variable ${auth.value_from_env} is not set`);
+  }
   if (!config.endpoints?.length) throw new Error(`${file}: endpoints must contain at least one endpoint`);
   const seen = new Set<string>();
   for (const [index, endpoint] of config.endpoints.entries()) {
@@ -152,6 +161,7 @@ export function loadProvider(file: string): ProviderEntry {
   validateProvider(config, file);
   config.operator.network = normalizeNetwork(config.operator.network);
   normalizePaymentProtocol(config, file);
+  validatePaymentCapabilities(config, file);
   const facilitatorUrl =
     config.operator.facilitator_url ||
     process.env.X402_FACILITATOR_URL ||
@@ -176,10 +186,12 @@ export function loadProvider(file: string): ProviderEntry {
 }
 
 function normalizePaymentProtocol(config: ProviderConfig, file: string): void {
-  const rawSchemes = config.operator.schemes?.length
-    ? config.operator.schemes
-    : [config.operator.protocol || config.operator.scheme || "exact"];
+  if (config.operator.schemes !== undefined && (!Array.isArray(config.operator.schemes) || !config.operator.schemes.length)) {
+    throw new Error(`${file}: operator.schemes must be a non-empty string array`);
+  }
+  const rawSchemes = config.operator.schemes ?? [config.operator.protocol || config.operator.scheme || "exact"];
   const schemes = [...new Set(rawSchemes.map(value => {
+    if (typeof value !== "string" || !value.trim()) throw new Error(`${file}: operator.schemes must contain non-empty strings`);
     const raw = String(value).toLowerCase();
     const normalized = raw.replace(/[-:\s]/g, "_");
     if (!["exact", "exact_gasfree", "exact_permit", "permit2", "exact_permit2"].includes(normalized)) {
@@ -199,6 +211,30 @@ function normalizePaymentProtocol(config: ProviderConfig, file: string): void {
   } else {
     delete config.operator.asset_transfer_method;
     delete config.operator.assetTransferMethod;
+  }
+}
+
+function validatePaymentCapabilities(config: ProviderConfig, file: string): void {
+  const symbols = config.operator.currencies?.usd ?? ["USDT"];
+  if (!Array.isArray(symbols) || !symbols.length || symbols.some(symbol => typeof symbol !== "string" || !symbol.trim())) {
+    throw new Error(`${file}: operator.currencies.usd must be a non-empty string array`);
+  }
+  if (new Set(symbols.map(symbol => symbol.toUpperCase())).size !== symbols.length) throw new Error(`${file}: operator.currencies.usd must not contain duplicates`);
+  for (const symbol of symbols) getToken(config.operator.network, symbol);
+
+  const recipient = config.recipients?.[config.operator.recipient]?.account ?? config.operator.recipient;
+  assertString(recipient, `${file}: resolved recipient`);
+  const validRecipient = config.operator.network.startsWith("tron:")
+    ? /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(recipient)
+    : /^0x[0-9a-fA-F]{40}$/.test(recipient);
+  if (!validRecipient) throw new Error(`${file}: operator.recipient must be a valid address or a resolvable recipient alias`);
+
+  for (const endpoint of config.endpoints ?? []) {
+    if (!endpoint.metering) continue;
+    const prices = [endpoint.metering.dimensions?.[0]?.tiers?.[0]?.price_usd,
+      ...(endpoint.metering.variants ?? []).map(variant => variant.dimensions?.[0]?.tiers?.[0]?.price_usd)]
+      .filter((price): price is number => typeof price === "number" && price > 0);
+    for (const price of prices) if (!paymentRequirements(config, price).length) throw new Error(`${file}: paid endpoint cannot generate payment requirements`);
   }
 }
 
@@ -228,6 +264,7 @@ export function endpointFor(provider: ProviderConfig, method: string, routePath:
 }
 
 function pathMatches(template: string, routePath: string): boolean {
+  if (!routePath.startsWith("/") || routePath.startsWith("//") || routePath.includes("\\") || routePath.includes("\0") || /%(?:2f|5c)/i.test(routePath)) return false;
   const templateParts = template.split("/").filter(Boolean);
   const routeParts = routePath.split("/").filter(Boolean);
   if (templateParts.length !== routeParts.length) return false;
