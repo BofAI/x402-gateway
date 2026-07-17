@@ -280,6 +280,36 @@ test("facilitator verify must explicitly succeed before forwarding", async () =>
   assert.equal(upstream.hits(), 0);
 });
 
+test("explicit settlement failure is not overridden by transaction metadata", async () => {
+  const upstream = await startUpstream();
+  const facilitatorUrl = await startFacilitator({
+    "/verify": (_request, response) => json(response, 200, { valid: true }),
+    "/settle": (_request, response) => json(response, 200, {
+      success: false,
+      transaction: "failed-transaction",
+    }),
+  });
+  const gatewayUrl = await startGateway({ facilitatorUrl, upstreamUrl: upstream.url });
+  const signature = encodePaymentSignatureHeader({
+    accepted: {
+      scheme: "exact",
+      network: "eip155:56",
+      amount: "1000000000000",
+      asset: "0x55d398326f99059fF775485246999027B3197955",
+      payTo: "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86",
+    },
+    signature: "test",
+  });
+
+  const response = await fetch(`${gatewayUrl}/providers/paid-provider/price/usdt`, {
+    headers: { "PAYMENT-SIGNATURE": signature },
+  });
+
+  assert.equal(response.status, 502);
+  assert.deepEqual(await response.json(), { error: "settlement failed" });
+  assert.equal(upstream.hits(), 0);
+});
+
 test("facilitator failures log status and routing metadata without payment payloads", async () => {
   const upstream = await startUpstream();
   const facilitatorUrl = await startFacilitator({

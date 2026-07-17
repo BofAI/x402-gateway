@@ -21,7 +21,7 @@ npm run build
 After installing the npm package globally, use the binary directly:
 
 ```bash
-npm install -g @bankofai/x402-gateway
+npm install -g @bankofai/x402-gateway@beta
 x402-gateway --help
 ```
 

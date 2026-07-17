@@ -199,6 +199,7 @@ function isVerifySuccess(verify: any): boolean {
 }
 
 function isSettleSuccess(settle: any): boolean {
+  if (settle?.success === false || settle?.settled === false) return false;
   return (
     settle?.success === true ||
     settle?.settled === true ||
