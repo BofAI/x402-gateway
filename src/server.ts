@@ -1,4 +1,5 @@
 import http, { IncomingMessage, ServerResponse } from "node:http";
+import { timingSafeEqual } from "node:crypto";
 import { URL } from "node:url";
 import type { ProviderEntry } from "./config.js";
 import { endpointFor, paymentRequirements, priceUsd } from "./config.js";
@@ -34,6 +35,8 @@ const MAX_BODY_BYTES = positiveIntegerEnv("X402_GATEWAY_MAX_BODY_BYTES", 1_000_0
 const FACILITATOR_TIMEOUT_MS = positiveIntegerEnv("X402_GATEWAY_FACILITATOR_TIMEOUT_MS", 10_000);
 const UPSTREAM_TIMEOUT_MS = positiveIntegerEnv("X402_GATEWAY_UPSTREAM_TIMEOUT_MS", 30_000);
 const MAX_RESPONSE_BYTES = positiveIntegerEnv("X402_GATEWAY_MAX_RESPONSE_BYTES", 10_000_000);
+const MAX_CONCURRENT_REQUESTS = positiveIntegerEnv("X402_GATEWAY_MAX_CONCURRENT_REQUESTS", 100);
+const RATE_LIMIT_PER_MINUTE = positiveIntegerEnv("X402_GATEWAY_RATE_LIMIT_PER_MINUTE", 300);
 const STRIP_REQUEST_HEADERS = new Set([
   "host",
   "connection",
@@ -77,6 +80,7 @@ type GatewayMetrics = {
   verifyFailures: number;
   settleFailures: number;
   upstreamFailures: number;
+  rejectedRequests: number;
 };
 
 function createMetrics(): GatewayMetrics {
@@ -86,6 +90,7 @@ function createMetrics(): GatewayMetrics {
     verifyFailures: 0,
     settleFailures: 0,
     upstreamFailures: 0,
+    rejectedRequests: 0,
   };
 }
 
@@ -226,7 +231,15 @@ function isAdminAllowed(request: IncomingMessage): boolean {
   const token = process.env.X402_GATEWAY_ADMIN_TOKEN;
   if (!token) return process.env.X402_GATEWAY_ADMIN_ALLOW_PUBLIC === "true";
   const auth = request.headers.authorization ?? "";
-  return auth === `Bearer ${token}`;
+  const expected = Buffer.from(`Bearer ${token}`);
+  const actual = Buffer.from(auth);
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+type RateEntry = { count: number; resetAt: number };
+
+function clientAddress(request: IncomingMessage): string {
+  return request.socket.remoteAddress ?? "unknown";
 }
 
 function requestParams(url: URL, body: Buffer, request: IncomingMessage): Record<string, string> {
@@ -306,7 +319,13 @@ async function forward(metrics: GatewayMetrics, entry: ProviderEntry, request: I
     }
   });
   if (paymentResponse) responseHeaders[headers.response] = encodeResponse(paymentResponse);
-  const responseBody = await readResponseBytes(upstreamResponse);
+  let responseBody: Buffer;
+  try {
+    responseBody = await readResponseBytes(upstreamResponse);
+  } catch (error) {
+    metrics.upstreamFailures += 1;
+    throw error;
+  }
   response.writeHead(upstreamResponse.status, responseHeaders);
   response.end(responseBody);
 }
@@ -314,7 +333,10 @@ async function forward(metrics: GatewayMetrics, entry: ProviderEntry, request: I
 export function createGatewayServer(providers: Map<string, ProviderEntry>): http.Server {
   const publicBaseUrl = configuredPublicBaseUrl();
   const metrics = createMetrics();
-  return http.createServer(async (request, response) => {
+  const rateLimits = new Map<string, RateEntry>();
+  let activeRequests = 0;
+  const server = http.createServer(async (request, response) => {
+    let countedActive = false;
     try {
       metrics.requests += 1;
       const url = new URL(request.url ?? "/", "http://local");
@@ -359,6 +381,7 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
           `x402_gateway_verify_failures_total ${metrics.verifyFailures}`,
           `x402_gateway_settle_failures_total ${metrics.settleFailures}`,
           `x402_gateway_upstream_failures_total ${metrics.upstreamFailures}`,
+          `x402_gateway_rejected_requests_total ${metrics.rejectedRequests}`,
           "",
         ].join("\n"));
         return;
@@ -379,6 +402,25 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
         json(response, 404, { error: "endpoint not found" });
         return;
       }
+      const now = Date.now();
+      const address = clientAddress(request);
+      let rate = rateLimits.get(address);
+      if (!rate || rate.resetAt <= now) {
+        rate = { count: 0, resetAt: now + 60_000 };
+        rateLimits.set(address, rate);
+      }
+      rate.count += 1;
+      if (rate.count > RATE_LIMIT_PER_MINUTE) {
+        metrics.rejectedRequests += 1;
+        const retryAfter = Math.max(1, Math.ceil((rate.resetAt - now) / 1000));
+        throw new HttpError(429, "gateway rate limited", undefined, { "retry-after": String(retryAfter) });
+      }
+      if (activeRequests >= MAX_CONCURRENT_REQUESTS) {
+        metrics.rejectedRequests += 1;
+        throw new HttpError(503, "gateway is busy", undefined, { "retry-after": "1" });
+      }
+      activeRequests += 1;
+      countedActive = true;
       const body = await readBody(request);
       const price = priceUsd(endpoint, requestParams(url, body, request));
       const requirements = paymentRequirements(entry.config, price);
@@ -456,6 +498,13 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
       }
       console.error(error);
       json(response, 500, { error: "internal server error" });
+    } finally {
+      if (countedActive) activeRequests -= 1;
     }
   });
+  server.requestTimeout = UPSTREAM_TIMEOUT_MS + FACILITATOR_TIMEOUT_MS * 2 + 5_000;
+  server.headersTimeout = Math.min(server.requestTimeout, 60_000);
+  server.keepAliveTimeout = 5_000;
+  server.maxConnections = MAX_CONCURRENT_REQUESTS * 2;
+  return server;
 }

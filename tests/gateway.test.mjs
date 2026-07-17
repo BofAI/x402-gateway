@@ -490,3 +490,27 @@ test("upstream redirects are not followed", async () => {
   assert.equal(response.status, 502);
   assert.equal(redirectedHits, 0);
 });
+
+test("provider routes are rate limited before reaching upstream", async () => {
+  const upstream = await startUpstream();
+  const entry = {
+    facilitatorUrl: "http://127.0.0.1:1",
+    config: {
+      name: "rate-provider",
+      forward_url: upstream.url,
+      operator: { network: "eip155:56", recipient: "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86" },
+      endpoints: [{ method: "GET", path: "/free" }],
+    },
+  };
+  const server = createGatewayServer(new Map([[entry.config.name, entry]]));
+  const port = await listen(server);
+  servers.push(server);
+  const url = `http://127.0.0.1:${port}/providers/rate-provider/free`;
+  for (let index = 0; index < 300; index += 1) {
+    assert.equal((await fetch(url)).status, 200);
+  }
+  const rejected = await fetch(url);
+  assert.equal(rejected.status, 429);
+  assert.ok(Number(rejected.headers.get("retry-after")) >= 1);
+  assert.equal(upstream.hits(), 300);
+});
