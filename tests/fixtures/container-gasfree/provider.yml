@@ -1,0 +1,20 @@
+name: gasfree-container-test
+forward_url: http://127.0.0.1:65534
+operator:
+  network: tron:0xcd8690dc
+  currencies:
+    usd: ["USDT"]
+  recipient: TTX1Us19zqsLXhY39PPR7KRUoMa93s3J3i
+  schemes: [exact, exact_gasfree]
+  scheme: exact
+  protocol: exact
+  asset_transfer_method: permit2
+  facilitator_url: http://127.0.0.1:65534
+  valid_for_seconds: 300
+endpoints:
+  - method: GET
+    path: /v1/ping
+    metering:
+      dimensions:
+        - tiers:
+            - price_usd: 0.000001

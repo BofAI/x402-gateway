@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -10,9 +10,13 @@ const root = path.resolve(import.meta.dirname, "..");
 const cli = path.join(root, "dist", "cli.js");
 
 function run(args, options = {}) {
+  const env = { ...process.env, ...(options.env ?? {}) };
+  for (const [key, value] of Object.entries(env)) {
+    if (value === undefined) delete env[key];
+  }
   return spawnSync(process.execPath, [cli, ...args], {
     cwd: options.cwd ?? root,
-    env: { ...process.env, ...(options.env ?? {}) },
+    env,
     encoding: "utf8",
   });
 }
@@ -41,7 +45,7 @@ function providerFixture() {
   writeFileSync(path.join(providerDir, "provider.yml"), `name: demo-provider
 forward_url: http://127.0.0.1:65535
 operator:
-  network: tron-nile
+  network: tron:0xcd8690dc
   recipient: TTX1Us19zqsLXhY39PPR7KRUoMa93s3J3i
   currencies:
     usd: ["USDT"]
@@ -114,6 +118,22 @@ test("check validates providers without starting a server", () => {
     const quiet = run(["check", "--providers", dir, "--quiet"]);
     assert.equal(quiet.status, 0, quiet.stderr);
     assert.equal(quiet.stdout, "");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("check rejects a configured but missing facilitator API key variable", () => {
+  const dir = providerFixture();
+  try {
+    const providerFile = path.join(dir, "demo", "provider.yml");
+    const source = readFileSync(providerFile, "utf8");
+    writeFileSync(providerFile, source.replace("  protocol: exact", "  protocol: exact\n  facilitator_api_key_env: TEST_MISSING_FACILITATOR_KEY"));
+    const result = run(["check", "--providers", dir, "--json"], {
+      env: { TEST_MISSING_FACILITATOR_KEY: undefined },
+    });
+    assert.equal(result.status, 1);
+    assert.match(JSON.parse(result.stdout).error.message, /TEST_MISSING_FACILITATOR_KEY is not set/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

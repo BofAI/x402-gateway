@@ -13,6 +13,7 @@ export type ProviderConfig = {
     currencies?: Record<string, string[]>;
     recipient: string;
     scheme?: string;
+    schemes?: string[];
     protocol?: string;
     asset_transfer_method?: string;
     assetTransferMethod?: string;
@@ -79,6 +80,10 @@ function assertHttpUrl(value: string | undefined, name: string): void {
   try {
     const url = new URL(value);
     if (!["http:", "https:"].includes(url.protocol)) throw new Error("unsupported protocol");
+    if (url.username || url.password || url.search || url.hash) throw new Error("credentials, query, and fragment are not allowed");
+    if (url.protocol === "http:" && !["localhost", "127.0.0.1", "::1"].includes(url.hostname) && process.env.X402_GATEWAY_ALLOW_INSECURE_HTTP !== "true") {
+      throw new Error("remote HTTP is not allowed");
+    }
   } catch {
     throw new Error(`${name} must be a valid http(s) URL`);
   }
@@ -129,6 +134,11 @@ function validateProvider(config: ProviderConfig, file: string): void {
   if (authMethod && !["header", "query_param", "access_token", "oauth2"].includes(authMethod)) {
     throw new Error(`${file}: unsupported routing.auth.method ${authMethod}`);
   }
+  const auth = config.routing?.auth;
+  if (auth) {
+    if (!auth.value && !auth.value_from_env) throw new Error(`${file}: routing.auth requires value or value_from_env`);
+    if (auth.value_from_env && !process.env[auth.value_from_env]) throw new Error(`${file}: environment variable ${auth.value_from_env} is not set`);
+  }
   if (!config.endpoints?.length) throw new Error(`${file}: endpoints must contain at least one endpoint`);
   const seen = new Set<string>();
   for (const [index, endpoint] of config.endpoints.entries()) {
@@ -151,17 +161,24 @@ export function loadProvider(file: string): ProviderEntry {
   validateProvider(config, file);
   config.operator.network = normalizeNetwork(config.operator.network);
   normalizePaymentProtocol(config, file);
+  validatePaymentCapabilities(config, file);
+  const facilitatorUrl =
+    config.operator.facilitator_url ||
+    process.env.X402_FACILITATOR_URL ||
+    process.env.FACILITATOR_URL ||
+    "https://facilitator.bankofai.io";
+  assertHttpUrl(facilitatorUrl, `${file}: facilitator URL`);
+  const configuredApiKeyEnv = config.operator.facilitator_api_key_env;
+  if (configuredApiKeyEnv && !process.env[configuredApiKeyEnv]) {
+    throw new Error(`${file}: environment variable ${configuredApiKeyEnv} is not set`);
+  }
   return {
     config,
-    facilitatorUrl:
-      config.operator.facilitator_url ||
-      process.env.X402_FACILITATOR_URL ||
-      process.env.FACILITATOR_URL ||
-      "https://facilitator.bankofai.io",
+    facilitatorUrl,
     facilitatorApiKey:
       config.operator.facilitator_api_key ||
-      (config.operator.facilitator_api_key_env
-        ? process.env[config.operator.facilitator_api_key_env]
+      (configuredApiKeyEnv
+        ? process.env[configuredApiKeyEnv]
         : undefined) ||
       process.env.X402_FACILITATOR_API_KEY ||
       process.env.FACILITATOR_API_KEY,
@@ -169,15 +186,56 @@ export function loadProvider(file: string): ProviderEntry {
 }
 
 function normalizePaymentProtocol(config: ProviderConfig, file: string): void {
-  const raw = String(config.operator.protocol || config.operator.scheme || "exact").toLowerCase();
-  const normalized = raw.replace(/[-:\s]/g, "_");
-  if (!["exact", "exact_permit", "permit2", "exact_permit2"].includes(normalized)) {
-    throw new Error(`${file}: unsupported x402 protocol ${raw}; use exact + permit2`);
+  if (config.operator.schemes !== undefined && (!Array.isArray(config.operator.schemes) || !config.operator.schemes.length)) {
+    throw new Error(`${file}: operator.schemes must be a non-empty string array`);
   }
-  config.operator.scheme = "exact";
-  config.operator.protocol = "exact";
-  config.operator.asset_transfer_method = "permit2";
-  config.operator.assetTransferMethod = "permit2";
+  const rawSchemes = config.operator.schemes ?? [config.operator.protocol || config.operator.scheme || "exact"];
+  const schemes = [...new Set(rawSchemes.map(value => {
+    if (typeof value !== "string" || !value.trim()) throw new Error(`${file}: operator.schemes must contain non-empty strings`);
+    const raw = String(value).toLowerCase();
+    const normalized = raw.replace(/[-:\s]/g, "_");
+    if (!["exact", "exact_gasfree", "exact_permit", "permit2", "exact_permit2"].includes(normalized)) {
+      throw new Error(`${file}: unsupported x402 protocol ${raw}; use exact or exact_gasfree`);
+    }
+    return normalized === "exact_gasfree" ? "exact_gasfree" : "exact";
+  }))];
+  if (schemes.includes("exact_gasfree") && !config.operator.network.startsWith("tron:")) {
+    throw new Error(`${file}: exact_gasfree is supported only on TRON networks`);
+  }
+  config.operator.schemes = schemes;
+  config.operator.scheme = schemes[0];
+  config.operator.protocol = schemes[0];
+  if (schemes.includes("exact")) {
+    config.operator.asset_transfer_method = "permit2";
+    config.operator.assetTransferMethod = "permit2";
+  } else {
+    delete config.operator.asset_transfer_method;
+    delete config.operator.assetTransferMethod;
+  }
+}
+
+function validatePaymentCapabilities(config: ProviderConfig, file: string): void {
+  const symbols = config.operator.currencies?.usd ?? ["USDT"];
+  if (!Array.isArray(symbols) || !symbols.length || symbols.some(symbol => typeof symbol !== "string" || !symbol.trim())) {
+    throw new Error(`${file}: operator.currencies.usd must be a non-empty string array`);
+  }
+  if (new Set(symbols.map(symbol => symbol.toUpperCase())).size !== symbols.length) throw new Error(`${file}: operator.currencies.usd must not contain duplicates`);
+  for (const symbol of symbols) getToken(config.operator.network, symbol);
+
+  const recipient = config.recipients?.[config.operator.recipient]?.account ?? config.operator.recipient;
+  assertString(recipient, `${file}: resolved recipient`);
+  const validRecipient = config.operator.network.startsWith("tron:")
+    ? /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(recipient)
+    : /^0x[0-9a-fA-F]{40}$/.test(recipient);
+  if (!validRecipient) throw new Error(`${file}: operator.recipient must be a valid address or a resolvable recipient alias`);
+
+  for (const endpoint of config.endpoints ?? []) {
+    if (!endpoint.metering) continue;
+    const prices = [endpoint.metering.dimensions?.[0]?.tiers?.[0]?.price_usd,
+      ...(endpoint.metering.variants ?? []).map(variant => variant.dimensions?.[0]?.tiers?.[0]?.price_usd)]
+      .filter((price): price is number => typeof price === "number" && price > 0);
+    for (const price of prices) if (!paymentRequirements(config, price).length) throw new Error(`${file}: paid endpoint cannot generate payment requirements`);
+  }
 }
 
 export function loadProviders(providerPath: string): Map<string, ProviderEntry> {
@@ -206,6 +264,7 @@ export function endpointFor(provider: ProviderConfig, method: string, routePath:
 }
 
 function pathMatches(template: string, routePath: string): boolean {
+  if (!routePath.startsWith("/") || routePath.startsWith("//") || routePath.includes("\\") || routePath.includes("\0") || /%(?:2f|5c)/i.test(routePath)) return false;
   const templateParts = template.split("/").filter(Boolean);
   const routeParts = routePath.split("/").filter(Boolean);
   if (templateParts.length !== routeParts.length) return false;
@@ -230,19 +289,22 @@ export function paymentRequirements(provider: ProviderConfig, price: number): Pa
   const network = normalizeNetwork(provider.operator.network);
   const symbols = provider.operator.currencies?.usd ?? ["USDT"];
   const payTo = provider.recipients?.[provider.operator.recipient]?.account ?? provider.operator.recipient;
-  return symbols.map(symbol => {
+  const schemes: Array<PaymentRequirement["scheme"]> = provider.operator.schemes?.length
+    ? provider.operator.schemes.map(scheme => scheme === "exact_gasfree" ? "exact_gasfree" : "exact")
+    : [provider.operator.scheme === "exact_gasfree" ? "exact_gasfree" : "exact"];
+  return schemes.flatMap(scheme => symbols.map(symbol => {
     const token = getToken(network, symbol);
     const transferMethod = provider.operator.assetTransferMethod || provider.operator.asset_transfer_method || token.assetTransferMethod;
     const amount = toSmallestUnit(price, token.decimals);
     if (amount === "0") throw new Error(`positive price produced zero amount for ${symbol} on ${network}`);
     return {
-      scheme: "exact",
+      scheme,
       network,
       amount,
       asset: token.address,
       payTo,
       maxTimeoutSeconds: provider.operator.valid_for_seconds ?? 300,
-      extra: transferMethod === "permit2" ? { assetTransferMethod: "permit2" } : {},
+      extra: scheme === "exact" && transferMethod === "permit2" ? { assetTransferMethod: "permit2" } : {},
     };
-  });
+  }));
 }

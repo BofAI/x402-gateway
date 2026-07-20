@@ -1,6 +1,6 @@
 {
   "name": "@bankofai/x402-gateway",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": false,
   "type": "module",
   "files": [
@@ -12,6 +12,15 @@
   "bin": {
     "x402-gateway": "dist/cli.js"
   },
+  "exports": {
+    ".": "./dist/index.js",
+    "./config": "./dist/config.js",
+    "./catalog": "./dist/catalog.js",
+    "./tokens": "./dist/tokens.js",
+    "./server": "./dist/server.js",
+    "./x402": "./dist/x402.js",
+    "./package.json": "./package.json"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test tests/*.test.mjs",
@@ -22,14 +31,17 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@bankofai/x402-core": "1.0.0",
-    "@bankofai/x402-evm": "1.0.0",
-    "@bankofai/x402-tron": "1.0.0",
+    "@bankofai/x402-core": "1.0.1",
+    "@bankofai/x402-evm": "1.0.1",
+    "@bankofai/x402-tron": "1.0.1",
     "yaml": "^2.8.2"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "ws": "8.21.0"
   }
 }
