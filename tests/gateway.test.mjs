@@ -16,6 +16,8 @@ test("public library API exposes provider and token helpers", () => {
   assert.equal(typeof publicApi.loadProviders, "function");
   assert.equal(typeof publicApi.paymentRequirements, "function");
   assert.equal(typeof publicApi.getToken, "function");
+  assert.equal(typeof publicApi.buildGatewayCatalog, "function");
+  assert.equal(typeof publicApi.providerPaymentAssets, "function");
 });
 
 function listen(server) {
