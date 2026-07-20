@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import { URL } from "node:url";
 import type { ProviderEntry } from "./config.js";
 import { endpointFor, paymentRequirements, priceUsd } from "./config.js";
+import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { decodeSignature, encodeRequired, encodeResponse, headers, matchRequirement, type PaymentRequirement } from "./x402.js";
 
 class HttpError extends Error {
@@ -236,8 +237,6 @@ function isAdminAllowed(request: IncomingMessage): boolean {
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
-type RateEntry = { count: number; resetAt: number };
-
 function clientAddress(request: IncomingMessage): string {
   return request.socket.remoteAddress ?? "unknown";
 }
@@ -333,7 +332,7 @@ async function forward(metrics: GatewayMetrics, entry: ProviderEntry, request: I
 export function createGatewayServer(providers: Map<string, ProviderEntry>): http.Server {
   const publicBaseUrl = configuredPublicBaseUrl();
   const metrics = createMetrics();
-  const rateLimits = new Map<string, RateEntry>();
+  const rateLimiter = new FixedWindowRateLimiter(RATE_LIMIT_PER_MINUTE);
   let activeRequests = 0;
   const server = http.createServer(async (request, response) => {
     let countedActive = false;
@@ -404,16 +403,10 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
       }
       const now = Date.now();
       const address = clientAddress(request);
-      let rate = rateLimits.get(address);
-      if (!rate || rate.resetAt <= now) {
-        rate = { count: 0, resetAt: now + 60_000 };
-        rateLimits.set(address, rate);
-      }
-      rate.count += 1;
-      if (rate.count > RATE_LIMIT_PER_MINUTE) {
+      const rate = rateLimiter.consume(address, now);
+      if (!rate.allowed) {
         metrics.rejectedRequests += 1;
-        const retryAfter = Math.max(1, Math.ceil((rate.resetAt - now) / 1000));
-        throw new HttpError(429, "gateway rate limited", undefined, { "retry-after": String(retryAfter) });
+        throw new HttpError(429, "gateway rate limited", undefined, { "retry-after": String(rate.retryAfter) });
       }
       if (activeRequests >= MAX_CONCURRENT_REQUESTS) {
         metrics.rejectedRequests += 1;
