@@ -5,10 +5,18 @@ import { decodePaymentResponseHeader, encodePaymentSignatureHeader } from "@bank
 import { createGatewayServer } from "../dist/server.js";
 import { paymentRequirements } from "../dist/config.js";
 import { normalizeNetwork, toSmallestUnit } from "../dist/tokens.js";
+import * as publicApi from "../dist/index.js";
 
 let servers = [];
 let oldAdminToken;
 let oldPublicBaseUrl;
+
+test("public library API exposes provider and token helpers", () => {
+  assert.equal(typeof publicApi.loadProvider, "function");
+  assert.equal(typeof publicApi.loadProviders, "function");
+  assert.equal(typeof publicApi.paymentRequirements, "function");
+  assert.equal(typeof publicApi.getToken, "function");
+});
 
 function listen(server) {
   return new Promise(resolve => {
