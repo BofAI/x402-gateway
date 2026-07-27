@@ -1,0 +1,77 @@
+name: defillama-coins-price-base-sepolia
+title: "DefiLlama Coin Prices (Base Sepolia)"
+description: "Coin price data from DefiLlama"
+category: finance
+version: v1
+
+forward_url: https://coins.llama.fi
+
+display:
+  service_url: https://x402-gateway.bankofai.io/providers/defillama-coins-price-base-sepolia
+  tags: ["defillama", "prices", "crypto"]
+
+discovery:
+  use_case: "Use DefiLlama Coin Prices through x402 on Base Sepolia."
+  spend_aware_usage:
+    - "Use a low fixed Base Sepolia USDC payment per request."
+  when_to_use:
+    - "Coin price data from DefiLlama"
+  request_examples:
+    - "GET /providers/defillama-coins-price-base-sepolia/prices/current/{coins}"
+    - "GET /providers/defillama-coins-price-base-sepolia/prices/historical/{timestamp}/{coins}"
+    - "GET /providers/defillama-coins-price-base-sepolia/chart/{coins}"
+
+routing:
+  type: proxy
+
+operator:
+  network: eip155:84532
+  currencies:
+    usd: ["USDC"]
+  recipient: "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86"
+  scheme: exact
+  protocol: exact
+  facilitator_url: https://x402.org/facilitator
+  valid_for_seconds: 300
+
+endpoints:
+  - method: GET
+    path: /prices/current/{coins}
+    description: "Current USD price for one or many coins"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.000001
+  - method: GET
+    path: /prices/historical/{timestamp}/{coins}
+    description: "Historical USD price for one or many coins"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.000001
+  - method: GET
+    path: /chart/{coins}
+    description: "Price chart time series for one or many coins"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.000001
+  - method: GET
+    path: /percentage/{coins}
+    description: "Percentage price change for one or many coins"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.000001

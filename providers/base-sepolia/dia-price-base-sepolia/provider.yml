@@ -1,0 +1,56 @@
+name: dia-price-base-sepolia
+title: "DIA Price Feeds (Base Sepolia)"
+description: "Oracle price feeds from DIA"
+category: finance
+version: v1
+
+forward_url: https://api.diadata.org
+
+display:
+  service_url: https://x402-gateway.bankofai.io/providers/dia-price-base-sepolia
+  tags: ["dia", "oracle", "prices"]
+
+discovery:
+  use_case: "Use DIA Price Feeds through x402 on Base Sepolia."
+  spend_aware_usage:
+    - "Use a low fixed Base Sepolia USDC payment per request."
+  when_to_use:
+    - "Oracle price feeds from DIA"
+  request_examples:
+    - "GET /providers/dia-price-base-sepolia/v1/quotation/{symbol}"
+    - "GET /providers/dia-price-base-sepolia/v1/assetQuotation/{blockchain}/{address}"
+
+routing:
+  type: proxy
+
+operator:
+  network: eip155:84532
+  currencies:
+    usd: ["USDC"]
+  recipient: "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86"
+  scheme: exact
+  protocol: exact
+  facilitator_url: https://x402.org/facilitator
+  valid_for_seconds: 300
+
+endpoints:
+  - method: GET
+    path: /v1/quotation/{symbol}
+    description: "Aggregated price quotation by asset symbol"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.000001
+  - method: GET
+    path: /v1/assetQuotation/{blockchain}/{address}
+    description: "Aggregated price quotation by blockchain and contract address"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.000001

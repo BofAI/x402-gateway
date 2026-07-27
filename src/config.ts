@@ -205,7 +205,9 @@ function normalizePaymentProtocol(config: ProviderConfig, file: string): void {
   config.operator.schemes = schemes;
   config.operator.scheme = schemes[0];
   config.operator.protocol = schemes[0];
-  if (schemes.includes("exact")) {
+  const configuredTransferMethod =
+    config.operator.assetTransferMethod || config.operator.asset_transfer_method;
+  if (schemes.includes("exact") && configuredTransferMethod === "permit2") {
     config.operator.asset_transfer_method = "permit2";
     config.operator.assetTransferMethod = "permit2";
   } else {
@@ -296,6 +298,14 @@ export function paymentRequirements(provider: ProviderConfig, price: number): Pa
     const token = getToken(network, symbol);
     const transferMethod = provider.operator.assetTransferMethod || provider.operator.asset_transfer_method || token.assetTransferMethod;
     const amount = toSmallestUnit(price, token.decimals);
+    const extra =
+      scheme !== "exact"
+        ? {}
+        : transferMethod === "permit2"
+          ? { assetTransferMethod: "permit2" }
+          : token.version
+            ? { name: token.name, version: token.version }
+            : {};
     if (amount === "0") throw new Error(`positive price produced zero amount for ${symbol} on ${network}`);
     return {
       scheme,
@@ -304,7 +314,7 @@ export function paymentRequirements(provider: ProviderConfig, price: number): Pa
       asset: token.address,
       payTo,
       maxTimeoutSeconds: provider.operator.valid_for_seconds ?? 300,
-      extra: scheme === "exact" && transferMethod === "permit2" ? { assetTransferMethod: "permit2" } : {},
+      extra,
     };
   }));
 }

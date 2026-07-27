@@ -1,0 +1,56 @@
+name: defillama-yields-base-sepolia
+title: "DefiLlama Yields (Base Sepolia)"
+description: "Yield pool data from DefiLlama"
+category: finance
+version: v1
+
+forward_url: https://yields.llama.fi
+
+display:
+  service_url: https://x402-gateway.bankofai.io/providers/defillama-yields-base-sepolia
+  tags: ["defillama", "yields", "defi"]
+
+discovery:
+  use_case: "Use DefiLlama Yields through x402 on Base Sepolia."
+  spend_aware_usage:
+    - "Use a low fixed Base Sepolia USDC payment per request."
+  when_to_use:
+    - "Yield pool data from DefiLlama"
+  request_examples:
+    - "GET /providers/defillama-yields-base-sepolia/pools"
+    - "GET /providers/defillama-yields-base-sepolia/chart/{pool}"
+
+routing:
+  type: proxy
+
+operator:
+  network: eip155:84532
+  currencies:
+    usd: ["USDC"]
+  recipient: "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86"
+  scheme: exact
+  protocol: exact
+  facilitator_url: https://x402.org/facilitator
+  valid_for_seconds: 300
+
+endpoints:
+  - method: GET
+    path: /pools
+    description: "All yield pools with current APY, TVL, chain and project"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.000001
+  - method: GET
+    path: /chart/{pool}
+    description: "Historical APY and TVL time series for a pool"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.000001

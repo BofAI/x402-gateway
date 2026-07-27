@@ -1,0 +1,67 @@
+name: dexscreener-dex-data-base-sepolia
+title: "DexScreener DEX Data (Base Sepolia)"
+description: "DEX pair market data from DexScreener"
+category: finance
+version: v1
+
+forward_url: https://api.dexscreener.com
+
+display:
+  service_url: https://x402-gateway.bankofai.io/providers/dexscreener-dex-data-base-sepolia
+  tags: ["dexscreener", "dex", "tokens"]
+
+discovery:
+  use_case: "Use DexScreener DEX Data through x402 on Base Sepolia."
+  spend_aware_usage:
+    - "Use a low fixed Base Sepolia USDC payment per request."
+  when_to_use:
+    - "DEX pair market data from DexScreener"
+  request_examples:
+    - "GET /providers/dexscreener-dex-data-base-sepolia/latest/dex/tokens/{tokenAddresses}"
+    - "GET /providers/dexscreener-dex-data-base-sepolia/latest/dex/search"
+    - "GET /providers/dexscreener-dex-data-base-sepolia/token-profiles/latest/v1"
+
+routing:
+  type: proxy
+
+operator:
+  network: eip155:84532
+  currencies:
+    usd: ["USDC"]
+  recipient: "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86"
+  scheme: exact
+  protocol: exact
+  facilitator_url: https://x402.org/facilitator
+  valid_for_seconds: 300
+
+endpoints:
+  - method: GET
+    path: /latest/dex/tokens/{tokenAddresses}
+    description: "DEX pairs for one or more token addresses"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.000001
+  - method: GET
+    path: /latest/dex/search
+    description: "Search DEX pairs by token name, symbol or address"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.000001
+  - method: GET
+    path: /token-profiles/latest/v1
+    description: "Latest token profiles"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.000001

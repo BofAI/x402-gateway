@@ -3,6 +3,7 @@ export type TokenInfo = {
   decimals: number;
   name: string;
   symbol: string;
+  version?: string;
   assetTransferMethod?: "permit2";
 };
 
@@ -21,6 +22,12 @@ export const TOKENS: Record<string, Record<string, TokenInfo>> = {
   "eip155:97": {
     USDT: { address: "0x337610d27c682E347C9cD60BD4b3b107C9d34dDd", decimals: 18, name: "Tether USD", symbol: "USDT", assetTransferMethod: "permit2" },
     USDC: { address: "0x64544969ed7EBf5f083679233325356EbE738930", decimals: 18, name: "USD Coin", symbol: "USDC", assetTransferMethod: "permit2" },
+  },
+  "eip155:8453": {
+    USDC: { address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", decimals: 6, name: "USD Coin", symbol: "USDC", version: "2" },
+  },
+  "eip155:84532": {
+    USDC: { address: "0x036CbD53842c5426634e7929541eC2318f3dCF7e", decimals: 6, name: "USDC", symbol: "USDC", version: "2" },
   },
 };
 
@@ -43,6 +50,8 @@ export function normalizeNetwork(network: string): string {
   return {
     "bsc-mainnet": "eip155:56",
     "bsc-testnet": "eip155:97",
+    "base-mainnet": "eip155:8453",
+    "base-sepolia": "eip155:84532",
   }[network] ?? network;
 }
 

@@ -1,0 +1,67 @@
+name: defillama-tvl-base-sepolia
+title: "DefiLlama TVL (Base Sepolia)"
+description: "Protocol TVL data from DefiLlama"
+category: finance
+version: v1
+
+forward_url: https://api.llama.fi
+
+display:
+  service_url: https://x402-gateway.bankofai.io/providers/defillama-tvl-base-sepolia
+  tags: ["defillama", "tvl", "defi"]
+
+discovery:
+  use_case: "Use DefiLlama TVL through x402 on Base Sepolia."
+  spend_aware_usage:
+    - "Use a low fixed Base Sepolia USDC payment per request."
+  when_to_use:
+    - "Protocol TVL data from DefiLlama"
+  request_examples:
+    - "GET /providers/defillama-tvl-base-sepolia/protocols"
+    - "GET /providers/defillama-tvl-base-sepolia/protocol/{slug}"
+    - "GET /providers/defillama-tvl-base-sepolia/tvl/{protocol}"
+
+routing:
+  type: proxy
+
+operator:
+  network: eip155:84532
+  currencies:
+    usd: ["USDC"]
+  recipient: "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86"
+  scheme: exact
+  protocol: exact
+  facilitator_url: https://x402.org/facilitator
+  valid_for_seconds: 300
+
+endpoints:
+  - method: GET
+    path: /protocols
+    description: "All protocols with current TVL, category and chain breakdown"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.000001
+  - method: GET
+    path: /protocol/{slug}
+    description: "Single protocol historical TVL, fees, tokens and metadata"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.000001
+  - method: GET
+    path: /tvl/{protocol}
+    description: "Current total TVL of a protocol"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.000001

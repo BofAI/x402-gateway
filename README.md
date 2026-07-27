@@ -39,6 +39,16 @@ Start from a providers directory:
 x402-gateway --providers providers --host 127.0.0.1 --port 4020
 ```
 
+Validate the repository's Base Sepolia USDC provider set:
+
+```bash
+x402-gateway check --providers providers/base-sepolia
+```
+
+These providers use `eip155:84532`, official Base Sepolia USDC, the `exact`
+EIP-3009 flow, and `https://x402.org/facilitator`. Base Mainnet providers are
+intentionally not listed until mainnet settlement has been validated separately.
+
 Validate provider files without starting the server:
 
 ```bash

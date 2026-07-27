@@ -4,7 +4,7 @@ import { afterEach, beforeEach, test } from "node:test";
 import { decodePaymentResponseHeader, encodePaymentSignatureHeader } from "@bankofai/x402-core/http";
 import { createGatewayServer } from "../dist/server.js";
 import { paymentRequirements } from "../dist/config.js";
-import { normalizeNetwork, toSmallestUnit } from "../dist/tokens.js";
+import { getToken, normalizeNetwork, toSmallestUnit } from "../dist/tokens.js";
 import * as publicApi from "../dist/index.js";
 
 let servers = [];
@@ -123,6 +123,34 @@ test("legacy TRON aliases are rejected in favor of canonical CAIP-2 IDs", () => 
   assert.throws(() => normalizeNetwork("tron-nile"), /use tron:0xcd8690dc/);
   assert.throws(() => normalizeNetwork("tron:mainnet"), /use tron:0x2b6653dc/);
   assert.throws(() => normalizeNetwork("tron:shasta"), /use tron:0x94a9059e/);
+});
+
+test("Base USDC requirements use exact EIP-3009 metadata and six decimals", () => {
+  assert.equal(normalizeNetwork("base-mainnet"), "eip155:8453");
+  assert.equal(normalizeNetwork("base-sepolia"), "eip155:84532");
+  assert.equal(getToken("eip155:8453", "USDC").decimals, 6);
+  assert.equal(
+    getToken("eip155:84532", "USDC").address,
+    "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+  );
+
+  const requirements = paymentRequirements({
+    name: "base-usdc-provider",
+    forward_url: "https://example.com",
+    operator: {
+      network: "eip155:84532",
+      recipient: "0x0000000000000000000000000000000000000001",
+      scheme: "exact",
+      currencies: { usd: ["USDC"] },
+    },
+    endpoints: [],
+  }, 0.001);
+
+  assert.equal(requirements[0].scheme, "exact");
+  assert.equal(requirements[0].network, "eip155:84532");
+  assert.equal(requirements[0].amount, "1000");
+  assert.equal(requirements[0].asset, "0x036CbD53842c5426634e7929541eC2318f3dCF7e");
+  assert.deepEqual(requirements[0].extra, { name: "USDC", version: "2" });
 });
 
 test("TRON GasFree providers emit exact_gasfree requirements without Permit2 metadata", () => {
