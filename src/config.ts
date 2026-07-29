@@ -36,6 +36,21 @@ export type ProviderConfig = {
   endpoints?: Array<{
     method: string;
     path: string;
+    request?: {
+      query?: Record<string, RequestField>;
+      headers?: Record<string, RequestField>;
+      body?: {
+        required?: boolean;
+        content_type?: string;
+        fields?: Record<string, RequestField>;
+      };
+    };
+    response?: {
+      json?: {
+        field: string;
+        equals: string | number | boolean;
+      };
+    };
     metering?: {
       dimensions?: Array<{ tiers?: Array<{ price_usd: number }> }>;
       variants?: Array<{
@@ -45,6 +60,15 @@ export type ProviderConfig = {
       }>;
     };
   }>;
+};
+
+export type RequestField = {
+  required?: boolean;
+  type?: "string" | "integer" | "number" | "boolean";
+  format?: "evm_address" | "evm_address_list";
+  min_length?: number;
+  max_length?: number;
+  enum?: Array<string | number | boolean>;
 };
 
 export type ProviderEntry = {
@@ -77,15 +101,81 @@ function assertString(value: unknown, name: string): asserts value is string {
 
 function assertHttpUrl(value: string | undefined, name: string): void {
   if (!value) return;
+  let url: URL;
   try {
-    const url = new URL(value);
-    if (!["http:", "https:"].includes(url.protocol)) throw new Error("unsupported protocol");
-    if (url.username || url.password || url.search || url.hash) throw new Error("credentials, query, and fragment are not allowed");
-    if (url.protocol === "http:" && !["localhost", "127.0.0.1", "::1"].includes(url.hostname) && process.env.X402_GATEWAY_ALLOW_INSECURE_HTTP !== "true") {
-      throw new Error("remote HTTP is not allowed");
-    }
+    url = new URL(value);
   } catch {
     throw new Error(`${name} must be a valid http(s) URL`);
+  }
+  if (!["http:", "https:"].includes(url.protocol)) throw new Error(`${name} uses unsupported protocol ${url.protocol}`);
+  if (url.username || url.password || url.search || url.hash) throw new Error(`${name} must not contain credentials, query, or fragment`);
+  if (url.protocol === "http:" && !["localhost", "127.0.0.1", "::1"].includes(url.hostname) && process.env.X402_GATEWAY_ALLOW_INSECURE_HTTP !== "true") {
+    throw new Error(`${name} remote HTTP is not allowed; use HTTPS or set X402_GATEWAY_ALLOW_INSECURE_HTTP=true for development`);
+  }
+}
+
+function validateRequestField(field: unknown, file: string, fieldPath: string): void {
+  if (!field || typeof field !== "object" || Array.isArray(field)) throw new Error(`${file}: ${fieldPath} must be an object`);
+  const value = field as RequestField;
+  if (value.type !== undefined && !["string", "integer", "number", "boolean"].includes(value.type)) {
+    throw new Error(`${file}: ${fieldPath}.type is unsupported`);
+  }
+  if (value.format !== undefined && !["evm_address", "evm_address_list"].includes(value.format)) {
+    throw new Error(`${file}: ${fieldPath}.format is unsupported`);
+  }
+  for (const key of ["min_length", "max_length"] as const) {
+    const limit = value[key];
+    if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 0)) {
+      throw new Error(`${file}: ${fieldPath}.${key} must be a non-negative integer`);
+    }
+  }
+  if (value.min_length !== undefined && value.max_length !== undefined && value.min_length > value.max_length) {
+    throw new Error(`${file}: ${fieldPath}.min_length must not exceed max_length`);
+  }
+  if (value.enum !== undefined && (!Array.isArray(value.enum) || !value.enum.length)) {
+    throw new Error(`${file}: ${fieldPath}.enum must contain at least one value`);
+  }
+}
+
+function validateRequestContract(endpoint: NonNullable<ProviderConfig["endpoints"]>[number], file: string, endpointPath: string): void {
+  const contract = endpoint.request;
+  if (!contract) return;
+  if (typeof contract !== "object" || Array.isArray(contract)) throw new Error(`${file}: ${endpointPath}.request must be an object`);
+  for (const [section, fields] of [["query", contract.query], ["headers", contract.headers]] as const) {
+    if (fields !== undefined && (!fields || typeof fields !== "object" || Array.isArray(fields))) {
+      throw new Error(`${file}: ${endpointPath}.request.${section} must be an object`);
+    }
+    for (const [name, field] of Object.entries(fields ?? {})) {
+      assertString(name, `${file}: ${endpointPath}.request.${section} field name`);
+      validateRequestField(field, file, `${endpointPath}.request.${section}.${name}`);
+    }
+  }
+  if (contract.body) {
+    if (typeof contract.body !== "object" || Array.isArray(contract.body)) {
+      throw new Error(`${file}: ${endpointPath}.request.body must be an object`);
+    }
+    if (contract.body.content_type !== undefined && contract.body.content_type !== "application/json") {
+      throw new Error(`${file}: ${endpointPath}.request.body.content_type currently supports application/json only`);
+    }
+    if (contract.body.fields !== undefined && (!contract.body.fields || typeof contract.body.fields !== "object" || Array.isArray(contract.body.fields))) {
+      throw new Error(`${file}: ${endpointPath}.request.body.fields must be an object`);
+    }
+    for (const [name, field] of Object.entries(contract.body.fields ?? {})) {
+      validateRequestField(field, file, `${endpointPath}.request.body.fields.${name}`);
+    }
+  }
+}
+
+function validateResponseContract(endpoint: NonNullable<ProviderConfig["endpoints"]>[number], file: string, endpointPath: string): void {
+  const contract = endpoint.response;
+  if (!contract) return;
+  if (typeof contract !== "object" || Array.isArray(contract)) throw new Error(`${file}: ${endpointPath}.response must be an object`);
+  if (!contract.json || typeof contract.json !== "object" || Array.isArray(contract.json)) {
+    throw new Error(`${file}: ${endpointPath}.response.json must be an object`);
+  }
+  assertString(contract.json.field, `${file}: ${endpointPath}.response.json.field`);
+  if (!["string", "number", "boolean"].includes(typeof contract.json.equals)) {
+    throw new Error(`${file}: ${endpointPath}.response.json.equals must be a string, number, or boolean`);
   }
 }
 
@@ -152,6 +242,8 @@ function validateProvider(config: ProviderConfig, file: string): void {
     const key = `${method} ${endpoint.path}`;
     if (seen.has(key)) throw new Error(`${file}: duplicate endpoint ${key}`);
     seen.add(key);
+    validateRequestContract(endpoint, file, `endpoints[${index}]`);
+    validateResponseContract(endpoint, file, `endpoints[${index}]`);
     validateMetering(endpoint, file, `endpoints[${index}]`);
   }
 }
@@ -194,7 +286,10 @@ function normalizePaymentProtocol(config: ProviderConfig, file: string): void {
     if (typeof value !== "string" || !value.trim()) throw new Error(`${file}: operator.schemes must contain non-empty strings`);
     const raw = String(value).toLowerCase();
     const normalized = raw.replace(/[-:\s]/g, "_");
-    if (!["exact", "exact_gasfree", "exact_permit", "permit2", "exact_permit2"].includes(normalized)) {
+    if (["exact_permit", "permit2", "exact_permit2"].includes(normalized)) {
+      throw new Error(`${file}: legacy protocol alias ${raw} is not supported; use scheme: exact with asset_transfer_method: permit2`);
+    }
+    if (!["exact", "exact_gasfree"].includes(normalized)) {
       throw new Error(`${file}: unsupported x402 protocol ${raw}; use exact or exact_gasfree`);
     }
     return normalized === "exact_gasfree" ? "exact_gasfree" : "exact";
@@ -205,7 +300,15 @@ function normalizePaymentProtocol(config: ProviderConfig, file: string): void {
   config.operator.schemes = schemes;
   config.operator.scheme = schemes[0];
   config.operator.protocol = schemes[0];
-  if (schemes.includes("exact")) {
+  if (config.operator.assetTransferMethod && config.operator.asset_transfer_method &&
+    config.operator.assetTransferMethod !== config.operator.asset_transfer_method) {
+    throw new Error(`${file}: operator.assetTransferMethod conflicts with operator.asset_transfer_method`);
+  }
+  const configuredTransferMethod = config.operator.assetTransferMethod || config.operator.asset_transfer_method;
+  if (configuredTransferMethod !== undefined && configuredTransferMethod !== "permit2") {
+    throw new Error(`${file}: unsupported asset transfer method ${configuredTransferMethod}`);
+  }
+  if (schemes.includes("exact") && configuredTransferMethod === "permit2") {
     config.operator.asset_transfer_method = "permit2";
     config.operator.assetTransferMethod = "permit2";
   } else {
@@ -296,6 +399,14 @@ export function paymentRequirements(provider: ProviderConfig, price: number): Pa
     const token = getToken(network, symbol);
     const transferMethod = provider.operator.assetTransferMethod || provider.operator.asset_transfer_method || token.assetTransferMethod;
     const amount = toSmallestUnit(price, token.decimals);
+    const extra =
+      scheme !== "exact"
+        ? {}
+        : transferMethod === "permit2"
+          ? { assetTransferMethod: "permit2" }
+          : token.version
+            ? { name: token.name, version: token.version }
+            : {};
     if (amount === "0") throw new Error(`positive price produced zero amount for ${symbol} on ${network}`);
     return {
       scheme,
@@ -304,7 +415,7 @@ export function paymentRequirements(provider: ProviderConfig, price: number): Pa
       asset: token.address,
       payTo,
       maxTimeoutSeconds: provider.operator.valid_for_seconds ?? 300,
-      extra: scheme === "exact" && transferMethod === "permit2" ? { assetTransferMethod: "permit2" } : {},
+      extra,
     };
   }));
 }

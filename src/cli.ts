@@ -159,11 +159,13 @@ function localUrls(host: string, port: number): { base: string; health: string; 
 function printStartup(options: Options, source: string, host: string, port: number, providers: string[]): void {
   if (flag(options, "quiet")) return;
   const urls = localUrls(host, port);
+  const version = readVersion() ?? "unknown";
+  const commit = process.env.X402_GATEWAY_BUILD_COMMIT?.trim() || "unknown";
   if (flag(options, "json")) {
-    process.stdout.write(JSON.stringify({ ok: true, source, host, port, count: providers.length, providers, health: urls.health, ready: urls.ready }, null, 2) + "\n");
+    process.stdout.write(JSON.stringify({ ok: true, version, commit, source, host, port, count: providers.length, providers, health: urls.health, ready: urls.ready }, null, 2) + "\n");
     return;
   }
-  process.stdout.write(`x402-gateway listening on ${urls.base}\n`);
+  process.stdout.write(`x402-gateway ${version} (${commit}) listening on ${urls.base}\n`);
   process.stdout.write(`providers: ${providers.length} loaded\n`);
   process.stdout.write(`health: ${urls.health}\n`);
   process.stdout.write(`ready: ${urls.ready}\n`);

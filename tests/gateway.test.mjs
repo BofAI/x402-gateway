@@ -4,7 +4,7 @@ import { afterEach, beforeEach, test } from "node:test";
 import { decodePaymentResponseHeader, encodePaymentSignatureHeader } from "@bankofai/x402-core/http";
 import { createGatewayServer } from "../dist/server.js";
 import { paymentRequirements } from "../dist/config.js";
-import { normalizeNetwork, toSmallestUnit } from "../dist/tokens.js";
+import { getToken, normalizeNetwork, toSmallestUnit } from "../dist/tokens.js";
 import * as publicApi from "../dist/index.js";
 
 let servers = [];
@@ -29,6 +29,12 @@ function listen(server) {
 function json(response, status, body) {
   response.writeHead(status, { "content-type": "application/json" });
   response.end(JSON.stringify(body));
+}
+
+async function requestJson(request) {
+  const chunks = [];
+  for await (const chunk of request) chunks.push(Buffer.from(chunk));
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
 async function startUpstream() {
@@ -67,7 +73,7 @@ async function startFacilitator(handlers = {}) {
   return `http://127.0.0.1:${port}`;
 }
 
-async function startGateway({ facilitatorUrl, upstreamUrl, facilitatorApiKey, network = "eip155:56", recipient = "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86", scheme = "exact" }) {
+async function startGateway({ facilitatorUrl, upstreamUrl, facilitatorApiKey, network = "eip155:56", recipient = "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86", scheme = "exact", requestContract, responseContract }) {
   const entry = {
     facilitatorUrl,
     facilitatorApiKey,
@@ -84,6 +90,8 @@ async function startGateway({ facilitatorUrl, upstreamUrl, facilitatorApiKey, ne
         {
           method: "GET",
           path: "/price/{asset}",
+          request: requestContract,
+          response: responseContract,
           metering: {
             dimensions: [{ tiers: [{ price_usd: 0.000001 }] }],
           },
@@ -123,6 +131,34 @@ test("legacy TRON aliases are rejected in favor of canonical CAIP-2 IDs", () => 
   assert.throws(() => normalizeNetwork("tron-nile"), /use tron:0xcd8690dc/);
   assert.throws(() => normalizeNetwork("tron:mainnet"), /use tron:0x2b6653dc/);
   assert.throws(() => normalizeNetwork("tron:shasta"), /use tron:0x94a9059e/);
+});
+
+test("Base USDC requirements use exact EIP-3009 metadata and six decimals", () => {
+  assert.equal(normalizeNetwork("base-mainnet"), "eip155:8453");
+  assert.equal(normalizeNetwork("base-sepolia"), "eip155:84532");
+  assert.equal(getToken("eip155:8453", "USDC").decimals, 6);
+  assert.equal(
+    getToken("eip155:84532", "USDC").address,
+    "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+  );
+
+  const requirements = paymentRequirements({
+    name: "base-usdc-provider",
+    forward_url: "https://example.com",
+    operator: {
+      network: "eip155:84532",
+      recipient: "0x0000000000000000000000000000000000000001",
+      scheme: "exact",
+      currencies: { usd: ["USDC"] },
+    },
+    endpoints: [],
+  }, 0.001);
+
+  assert.equal(requirements[0].scheme, "exact");
+  assert.equal(requirements[0].network, "eip155:84532");
+  assert.equal(requirements[0].amount, "1000");
+  assert.equal(requirements[0].asset, "0x036CbD53842c5426634e7929541eC2318f3dCF7e");
+  assert.deepEqual(requirements[0].extra, { name: "USDC", version: "2" });
 });
 
 test("TRON GasFree providers emit exact_gasfree requirements without Permit2 metadata", () => {
@@ -187,7 +223,9 @@ test("metrics are isolated between gateway server instances", async () => {
     headers: { authorization: "Bearer test-admin" },
   });
   assert.equal(response.status, 200);
-  assert.match(await response.text(), /x402_gateway_requests_total 1(?:\n|$)/);
+  const metrics = await response.text();
+  assert.match(metrics, /x402_gateway_http_requests_total 1(?:\n|$)/);
+  assert.match(metrics, /x402_gateway_provider_requests_total 0(?:\n|$)/);
 });
 
 test("unpaid requests return a payment challenge", async () => {
@@ -265,6 +303,77 @@ test("invalid payment signatures are rejected as client errors", async () => {
   assert.equal(upstream.hits(), 0);
 });
 
+test("payment payloads without x402Version are rejected before facilitator calls", async () => {
+  const upstream = await startUpstream();
+  let facilitatorCalls = 0;
+  const facilitatorUrl = await startFacilitator({
+    "/verify": (_request, response) => {
+      facilitatorCalls += 1;
+      json(response, 200, { valid: true });
+    },
+  });
+  const gatewayUrl = await startGateway({ facilitatorUrl, upstreamUrl: upstream.url });
+  const legacySignature = encodePaymentSignatureHeader({
+    accepted: {
+      scheme: "exact",
+      network: "eip155:56",
+      amount: "1000000000000",
+      asset: "0x55d398326f99059fF775485246999027B3197955",
+      payTo: "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86",
+    },
+    signature: "legacy",
+  });
+
+  const response = await fetch(`${gatewayUrl}/providers/paid-provider/price/usdt`, {
+    headers: { "PAYMENT-SIGNATURE": legacySignature },
+  });
+  assert.equal(response.status, 400);
+  assert.equal(facilitatorCalls, 0);
+  assert.equal(upstream.hits(), 0);
+});
+
+test("requests missing required parameters are rejected before payment", async () => {
+  const upstream = await startUpstream();
+  const facilitatorUrl = await startFacilitator();
+  const gatewayUrl = await startGateway({
+    facilitatorUrl,
+    upstreamUrl: upstream.url,
+    requestContract: {
+      query: { q: { required: true, type: "string", min_length: 1 } },
+    },
+  });
+
+  const rejected = await fetch(`${gatewayUrl}/providers/paid-provider/price/usdt`);
+  assert.equal(rejected.status, 400);
+  assert.deepEqual(await rejected.json(), { error: "missing required query parameter: q" });
+  assert.equal(rejected.headers.get("PAYMENT-REQUIRED"), null);
+  assert.equal(upstream.hits(), 0);
+
+  const challenge = await fetch(`${gatewayUrl}/providers/paid-provider/price/usdt?q=USDC`);
+  assert.equal(challenge.status, 402);
+});
+
+test("invalid request formats are rejected before payment", async () => {
+  const upstream = await startUpstream();
+  const facilitatorUrl = await startFacilitator();
+  const gatewayUrl = await startGateway({
+    facilitatorUrl,
+    upstreamUrl: upstream.url,
+    requestContract: {
+      query: {
+        addresses: { required: true, type: "string", format: "evm_address_list" },
+      },
+    },
+  });
+
+  const response = await fetch(
+    `${gatewayUrl}/providers/paid-provider/price/usdt?addresses=not-an-address`,
+  );
+  assert.equal(response.status, 400);
+  assert.equal(response.headers.get("PAYMENT-REQUIRED"), null);
+  assert.equal(upstream.hits(), 0);
+});
+
 test("facilitator verify must explicitly succeed before forwarding", async () => {
   const upstream = await startUpstream();
   const facilitatorUrl = await startFacilitator({
@@ -272,6 +381,7 @@ test("facilitator verify must explicitly succeed before forwarding", async () =>
   });
   const gatewayUrl = await startGateway({ facilitatorUrl, upstreamUrl: upstream.url });
   const signature = encodePaymentSignatureHeader({
+    x402Version: 2,
     accepted: {
       scheme: "exact",
       network: "eip155:56",
@@ -301,6 +411,7 @@ test("explicit settlement failure is not overridden by transaction metadata", as
   });
   const gatewayUrl = await startGateway({ facilitatorUrl, upstreamUrl: upstream.url });
   const signature = encodePaymentSignatureHeader({
+    x402Version: 2,
     accepted: {
       scheme: "exact",
       network: "eip155:56",
@@ -332,6 +443,7 @@ test("facilitator failures log status and routing metadata without payment paylo
   });
   const gatewayUrl = await startGateway({ facilitatorUrl, upstreamUrl: upstream.url });
   const signature = encodePaymentSignatureHeader({
+    x402Version: 2,
     accepted: {
       scheme: "exact",
       network: "eip155:56",
@@ -381,14 +493,17 @@ test("facilitator failures log status and routing metadata without payment paylo
 test("facilitator API keys use the X-API-KEY header", async () => {
   const upstream = await startUpstream();
   const receivedKeys = [];
+  const receivedBodies = [];
   const facilitatorUrl = await startFacilitator({
-    "/verify": (request, response) => {
+    "/verify": async (request, response) => {
       receivedKeys.push(request.headers["x-api-key"]);
+      receivedBodies.push(await requestJson(request));
       assert.equal(request.headers.authorization, undefined);
       json(response, 200, { valid: true });
     },
-    "/settle": (request, response) => {
+    "/settle": async (request, response) => {
       receivedKeys.push(request.headers["x-api-key"]);
+      receivedBodies.push(await requestJson(request));
       assert.equal(request.headers.authorization, undefined);
       json(response, 200, { success: true, transaction: "test-transaction", network: "eip155:56" });
     },
@@ -399,6 +514,7 @@ test("facilitator API keys use the X-API-KEY header", async () => {
     facilitatorApiKey: "secret-facilitator-key",
   });
   const signature = encodePaymentSignatureHeader({
+    x402Version: 2,
     accepted: {
       scheme: "exact",
       network: "eip155:56",
@@ -414,6 +530,34 @@ test("facilitator API keys use the X-API-KEY header", async () => {
   });
   assert.equal(response.status, 200);
   assert.deepEqual(receivedKeys, ["secret-facilitator-key", "secret-facilitator-key"]);
+  assert.deepEqual(receivedBodies.map(body => body.x402Version), [2, 2]);
+  assert.deepEqual(receivedBodies.map(body => body.paymentPayload.x402Version), [2, 2]);
+});
+
+test("settlement network must match the selected requirement", async () => {
+  const upstream = await startUpstream();
+  const facilitatorUrl = await startFacilitator({
+    "/verify": (_request, response) => json(response, 200, { valid: true }),
+    "/settle": (_request, response) => json(response, 200, { success: true, transaction: "wrong-network", network: "eip155:8453" }),
+  });
+  const gatewayUrl = await startGateway({ facilitatorUrl, upstreamUrl: upstream.url });
+  const signature = encodePaymentSignatureHeader({
+    x402Version: 2,
+    accepted: {
+      scheme: "exact",
+      network: "eip155:56",
+      amount: "1000000000000",
+      asset: "0x55d398326f99059fF775485246999027B3197955",
+      payTo: "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86",
+    },
+    signature: "test",
+  });
+
+  const response = await fetch(`${gatewayUrl}/providers/paid-provider/price/usdt`, {
+    headers: { "PAYMENT-SIGNATURE": signature },
+  });
+  assert.equal(response.status, 502);
+  assert.equal(upstream.hits(), 0);
 });
 
 test("settled payments retain PAYMENT-RESPONSE when upstream connection fails", async () => {
@@ -429,6 +573,7 @@ test("settled payments retain PAYMENT-RESPONSE when upstream connection fails", 
     upstreamUrl: `http://127.0.0.1:${unavailablePort}`,
   });
   const signature = encodePaymentSignatureHeader({
+    x402Version: 2,
     accepted: {
       scheme: "exact",
       network: "eip155:56",
@@ -445,6 +590,54 @@ test("settled payments retain PAYMENT-RESPONSE when upstream connection fails", 
   assert.equal(response.status, 502);
   assert.equal((await response.json()).settled, true);
   assert.equal(decodePaymentResponseHeader(response.headers.get("PAYMENT-RESPONSE")).transaction, "settled-transaction");
+});
+
+test("provider business errors are not counted as successful delivery", async () => {
+  const upstream = http.createServer((_request, response) => {
+    json(response, 200, { code: 2007, message: "contract_addresses is required" });
+  });
+  const upstreamPort = await listen(upstream);
+  servers.push(upstream);
+  const facilitatorUrl = await startFacilitator({
+    "/verify": (_request, response) => json(response, 200, { valid: true }),
+    "/settle": (_request, response) => json(response, 200, {
+      success: true,
+      transaction: "settled-business-error",
+      network: "eip155:56",
+    }),
+  });
+  const gatewayUrl = await startGateway({
+    facilitatorUrl,
+    upstreamUrl: `http://127.0.0.1:${upstreamPort}`,
+    responseContract: { json: { field: "code", equals: 1 } },
+  });
+  const signature = encodePaymentSignatureHeader({
+    x402Version: 2,
+    accepted: {
+      scheme: "exact",
+      network: "eip155:56",
+      amount: "1000000000000",
+      asset: "0x55d398326f99059fF775485246999027B3197955",
+      payTo: "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86",
+    },
+    signature: "test",
+  });
+
+  const response = await fetch(`${gatewayUrl}/providers/paid-provider/price/usdt`, {
+    headers: { "PAYMENT-SIGNATURE": signature },
+  });
+  assert.equal(response.status, 502);
+  assert.deepEqual(await response.json(), {
+    error: "upstream failed after payment settlement",
+    settled: true,
+  });
+
+  const metrics = await fetch(`${gatewayUrl}/metrics`, {
+    headers: { authorization: "Bearer test-admin" },
+  }).then(value => value.text());
+  assert.match(metrics, /x402_gateway_settlements_total 1(?:\n|$)/);
+  assert.match(metrics, /x402_gateway_deliveries_total 0(?:\n|$)/);
+  assert.match(metrics, /x402_gateway_post_settlement_failures_total 1(?:\n|$)/);
 });
 
 test("upstream services cannot spoof x402 response headers", async () => {
@@ -468,6 +661,38 @@ test("upstream services cannot spoof x402 response headers", async () => {
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("PAYMENT-REQUIRED"), null);
   assert.equal(response.headers.get("PAYMENT-RESPONSE"), null);
+});
+
+test("default response limit allows DefiLlama-sized responses above 10 MB", async () => {
+  const payload = Buffer.alloc(11_100_000, "x");
+  const upstream = http.createServer((_request, response) => {
+    response.writeHead(200, {
+      "content-type": "application/octet-stream",
+      "content-length": String(payload.length),
+    });
+    response.end(payload);
+  });
+  const upstreamPort = await listen(upstream);
+  servers.push(upstream);
+  const entry = {
+    facilitatorUrl: "http://127.0.0.1:1",
+    config: {
+      name: "large-provider",
+      forward_url: `http://127.0.0.1:${upstreamPort}`,
+      operator: {
+        network: "eip155:56",
+        recipient: "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86",
+      },
+      endpoints: [{ method: "GET", path: "/large" }],
+    },
+  };
+  const server = createGatewayServer(new Map([[entry.config.name, entry]]));
+  const port = await listen(server);
+  servers.push(server);
+
+  const response = await fetch(`http://127.0.0.1:${port}/providers/large-provider/large`);
+  assert.equal(response.status, 200);
+  assert.equal((await response.arrayBuffer()).byteLength, payload.length);
 });
 
 test("upstream redirects are not followed", async () => {

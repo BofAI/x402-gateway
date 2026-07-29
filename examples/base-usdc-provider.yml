@@ -1,0 +1,45 @@
+name: example-price-base-usdc
+title: "Base Sepolia USDC Provider"
+description: "Base Sepolia provider protected by x402 exact USDC payment"
+category: data
+version: v1
+
+forward_url: ${X402_PROVIDER_FORWARD_URL}
+
+display:
+  service_url: ${X402_GATEWAY_PUBLIC_BASE_URL}/providers/example-price-base-usdc
+  tags: ["base", "base-sepolia", "usdc", "x402"]
+
+discovery:
+  use_case: "Use for validating Base Sepolia USDC x402 payments."
+  spend_aware_usage:
+    - "Use small test USDC amounts while validating facilitator and gateway wiring."
+  when_to_use:
+    - "Use when testing x402 exact USDC payments on Base Sepolia."
+  request_examples:
+    - "GET /providers/example-price-base-usdc/v1/ping"
+
+routing:
+  type: proxy
+
+operator:
+  network: eip155:84532
+  currencies:
+    usd: ["USDC"]
+  recipient: ${X402_PROVIDER_RECIPIENT_BASE}
+  scheme: exact
+  protocol: exact
+  facilitator_url: ${X402_FACILITATOR_URL}
+  valid_for_seconds: 300
+
+endpoints:
+  - method: GET
+    path: /v1/ping
+    description: "Base Sepolia USDC paid ping endpoint"
+    metering:
+      dimensions:
+        - direction: usage
+          unit: requests
+          scale: 1
+          tiers:
+            - price_usd: 0.001

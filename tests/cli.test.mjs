@@ -123,6 +123,33 @@ test("check validates providers without starting a server", () => {
   }
 });
 
+test("repository Base example passes the documented check", () => {
+  const result = run(["check", "--provider", "examples/base-usdc-provider.yml", "--json"], {
+    env: {
+      X402_PROVIDER_FORWARD_URL: "https://api.example.com",
+      X402_GATEWAY_PUBLIC_BASE_URL: "https://gateway.example.com",
+      X402_PROVIDER_RECIPIENT_BASE: "0x0000000000000000000000000000000000000001",
+      X402_FACILITATOR_URL: "https://x402.org/facilitator",
+    },
+  });
+  assert.equal(result.status, 0, result.stdout || result.stderr);
+  assert.equal(JSON.parse(result.stdout).count, 1);
+});
+
+test("legacy Permit2 protocol aliases fail with an explicit migration error", () => {
+  const dir = providerFixture();
+  try {
+    const providerFile = path.join(dir, "demo", "provider.yml");
+    const source = readFileSync(providerFile, "utf8");
+    writeFileSync(providerFile, source.replace("  protocol: exact", "  protocol: exact_permit"));
+    const result = run(["check", "--providers", dir, "--json"]);
+    assert.equal(result.status, 1);
+    assert.match(JSON.parse(result.stdout).error.message, /use scheme: exact with asset_transfer_method: permit2/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("check rejects a configured but missing facilitator API key variable", () => {
   const dir = providerFixture();
   try {
