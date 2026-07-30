@@ -509,6 +509,8 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
           `x402_gateway_post_settlement_failures_total ${metrics.postSettlementFailures}`,
           `x402_gateway_verify_failures_total ${metrics.verifyFailures}`,
           `x402_gateway_settle_failures_total ${metrics.settleFailures}`,
+          "# HELP x402_gateway_upstream_failures_total All upstream failures, including failures after settlement.",
+          "# TYPE x402_gateway_upstream_failures_total counter",
           `x402_gateway_upstream_failures_total ${metrics.upstreamFailures}`,
           `x402_gateway_rejected_requests_total ${metrics.rejectedRequests}`,
           "# HELP x402_gateway_requests_total Deprecated alias for x402_gateway_http_requests_total.",
