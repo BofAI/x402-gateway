@@ -132,6 +132,10 @@ function validateRequestField(field: unknown, file: string, fieldPath: string): 
   if (value.min_length !== undefined && value.max_length !== undefined && value.min_length > value.max_length) {
     throw new Error(`${file}: ${fieldPath}.min_length must not exceed max_length`);
   }
+  if ((value.min_length !== undefined || value.max_length !== undefined) &&
+    value.type !== undefined && value.type !== "string") {
+    throw new Error(`${file}: ${fieldPath}.min_length and max_length require type: string`);
+  }
   if (value.enum !== undefined && (!Array.isArray(value.enum) || !value.enum.length)) {
     throw new Error(`${file}: ${fieldPath}.enum must contain at least one value`);
   }

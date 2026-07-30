@@ -279,5 +279,9 @@ semantics:
 - `x402_gateway_deliveries_total`: settled requests delivered from upstream.
 - `x402_gateway_post_settlement_failures_total`: failures after settlement.
 
+For compatibility with existing dashboards, the endpoint also emits
+`x402_gateway_requests_total` and `x402_gateway_paid_requests_total` as
+deprecated aliases for HTTP requests and successful settlements respectively.
+
 These counters do not claim that a settlement implies successful business
 delivery.

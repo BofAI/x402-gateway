@@ -295,6 +295,14 @@ function validateRequestContract(endpoint: NonNullable<ProviderEntry["config"]["
   }
 }
 
+function rejectDuplicateQueryParameters(url: URL): void {
+  const seen = new Set<string>();
+  for (const key of url.searchParams.keys()) {
+    if (seen.has(key)) throw new HttpError(400, `duplicate query parameter: ${key}`);
+    seen.add(key);
+  }
+}
+
 function responseField(payload: unknown, field: string): unknown {
   return field.split(".").reduce<unknown>((value, part) => {
     if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
@@ -503,6 +511,12 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
           `x402_gateway_settle_failures_total ${metrics.settleFailures}`,
           `x402_gateway_upstream_failures_total ${metrics.upstreamFailures}`,
           `x402_gateway_rejected_requests_total ${metrics.rejectedRequests}`,
+          "# HELP x402_gateway_requests_total Deprecated alias for x402_gateway_http_requests_total.",
+          "# TYPE x402_gateway_requests_total counter",
+          `x402_gateway_requests_total ${metrics.httpRequests}`,
+          "# HELP x402_gateway_paid_requests_total Deprecated alias for x402_gateway_settlements_total.",
+          "# TYPE x402_gateway_paid_requests_total counter",
+          `x402_gateway_paid_requests_total ${metrics.settlements}`,
           "",
         ].join("\n"));
         return;
@@ -538,6 +552,7 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
       activeRequests += 1;
       countedActive = true;
       const body = await readBody(request);
+      rejectDuplicateQueryParameters(url);
       validateRequestContract(endpoint, url, request, body);
       const price = priceUsd(endpoint, requestParams(url, body, request));
       const requirements = paymentRequirements(entry.config, price);

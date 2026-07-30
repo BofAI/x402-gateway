@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { decodePaymentResponseHeader, encodePaymentSignatureHeader } from "@bankofai/x402-core/http";
 import { createGatewayServer } from "../dist/server.js";
@@ -161,6 +164,33 @@ test("Base USDC requirements use exact EIP-3009 metadata and six decimals", () =
   assert.deepEqual(requirements[0].extra, { name: "USDC", version: "2" });
 });
 
+test("length constraints are rejected for non-string request fields", () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "x402-gateway-config-"));
+  const providerFile = path.join(directory, "provider.yml");
+  writeFileSync(providerFile, `name: invalid-length-provider
+forward_url: http://127.0.0.1:8080
+operator:
+  network: eip155:56
+  recipient: "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86"
+endpoints:
+  - method: GET
+    path: /price
+    request:
+      query:
+        count:
+          type: integer
+          min_length: 3
+`);
+  try {
+    assert.throws(
+      () => publicApi.loadProvider(providerFile),
+      /min_length and max_length require type: string/,
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("TRON GasFree providers emit exact_gasfree requirements without Permit2 metadata", () => {
   const requirements = paymentRequirements({
     name: "gasfree-provider",
@@ -226,6 +256,8 @@ test("metrics are isolated between gateway server instances", async () => {
   const metrics = await response.text();
   assert.match(metrics, /x402_gateway_http_requests_total 1(?:\n|$)/);
   assert.match(metrics, /x402_gateway_provider_requests_total 0(?:\n|$)/);
+  assert.match(metrics, /x402_gateway_requests_total 1(?:\n|$)/);
+  assert.match(metrics, /x402_gateway_paid_requests_total 0(?:\n|$)/);
 });
 
 test("unpaid requests return a payment challenge", async () => {
@@ -370,6 +402,28 @@ test("invalid request formats are rejected before payment", async () => {
     `${gatewayUrl}/providers/paid-provider/price/usdt?addresses=not-an-address`,
   );
   assert.equal(response.status, 400);
+  assert.equal(response.headers.get("PAYMENT-REQUIRED"), null);
+  assert.equal(upstream.hits(), 0);
+});
+
+test("duplicate query parameters are rejected before pricing and payment", async () => {
+  const upstream = await startUpstream();
+  const facilitatorUrl = await startFacilitator();
+  const gatewayUrl = await startGateway({
+    facilitatorUrl,
+    upstreamUrl: upstream.url,
+    requestContract: {
+      query: {
+        symbol: { required: true, type: "string", enum: ["USDC"] },
+      },
+    },
+  });
+
+  const response = await fetch(
+    `${gatewayUrl}/providers/paid-provider/price/usdt?symbol=USDC&symbol=EVIL`,
+  );
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "duplicate query parameter: symbol" });
   assert.equal(response.headers.get("PAYMENT-REQUIRED"), null);
   assert.equal(upstream.hits(), 0);
 });

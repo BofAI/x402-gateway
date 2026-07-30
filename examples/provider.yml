@@ -5,7 +5,6 @@ category: data
 version: v1
 
 forward_url: ${X402_PROVIDER_FORWARD_URL}
-openapi_url: ${X402_PROVIDER_OPENAPI_URL}
 
 display:
   service_url: ${X402_GATEWAY_PUBLIC_BASE_URL}/providers/example-price-tron
