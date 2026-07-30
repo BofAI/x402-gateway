@@ -1,7 +1,7 @@
 services:
   gateway:
-    image: ${X402_GATEWAY_IMAGE:-bankofai/x402-gateway:test}
-    pull_policy: always
+    image: ${X402_GATEWAY_IMAGE:-x402-gateway:local}
+    pull_policy: build
     build:
       context: .
       dockerfile: Dockerfile
@@ -11,22 +11,21 @@ services:
       - path: .env
         required: false
     environment:
-      X402_GATEWAY_PROVIDERS_DIR: ${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}
+      X402_GATEWAY_PROVIDERS_DIR: /app/providers
       X402_GATEWAY_PUBLIC_BASE_URL: ${X402_GATEWAY_PUBLIC_BASE_URL:-http://host.docker.internal:4020}
+      X402_GATEWAY_BUILD_COMMIT: ${X402_GATEWAY_BUILD_COMMIT:-local}
       X402_GATEWAY_MAX_CONCURRENT_REQUESTS: ${X402_GATEWAY_MAX_CONCURRENT_REQUESTS:-100}
       X402_GATEWAY_RATE_LIMIT_PER_MINUTE: ${X402_GATEWAY_RATE_LIMIT_PER_MINUTE:-300}
       X402_FACILITATOR_URL: ${X402_FACILITATOR_URL:-https://facilitator.example.com}
       X402_FACILITATOR_API_KEY: ${X402_FACILITATOR_API_KEY:-}
-      X402_PROVIDER_RECIPIENT_TRON: ${X402_PROVIDER_RECIPIENT_TRON:-}
-      BANKOFAI_API_KEY: ${BANKOFAI_API_KEY:-}
     ports:
       - "${X402_GATEWAY_PORT:-4020}:8080"
     volumes:
-      - ./providers:${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}:ro
+      - ${X402_GATEWAY_PROVIDERS_HOST_DIR:-./providers}:/app/providers:ro
     command:
       - x402-gateway
       - --providers
-      - ${X402_GATEWAY_PROVIDERS_DIR:-/app/providers}
+      - /app/providers
       - --host
       - 0.0.0.0
       - --port

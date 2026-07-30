@@ -33,6 +33,7 @@ export function decodeSignature(value: string): unknown {
 }
 
 export function matchRequirement(payload: any, requirement: PaymentRequirement): boolean {
+  if (payload?.x402Version !== 2) return false;
   const accepted = payload?.accepted ?? payload?.payment?.accepted ?? payload;
   if (!accepted || typeof accepted !== "object") return false;
   return (

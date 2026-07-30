@@ -35,7 +35,7 @@ function positiveIntegerEnv(name: string, fallback: number): number {
 const MAX_BODY_BYTES = positiveIntegerEnv("X402_GATEWAY_MAX_BODY_BYTES", 1_000_000);
 const FACILITATOR_TIMEOUT_MS = positiveIntegerEnv("X402_GATEWAY_FACILITATOR_TIMEOUT_MS", 10_000);
 const UPSTREAM_TIMEOUT_MS = positiveIntegerEnv("X402_GATEWAY_UPSTREAM_TIMEOUT_MS", 30_000);
-const MAX_RESPONSE_BYTES = positiveIntegerEnv("X402_GATEWAY_MAX_RESPONSE_BYTES", 10_000_000);
+const MAX_RESPONSE_BYTES = positiveIntegerEnv("X402_GATEWAY_MAX_RESPONSE_BYTES", 20_000_000);
 const MAX_CONCURRENT_REQUESTS = positiveIntegerEnv("X402_GATEWAY_MAX_CONCURRENT_REQUESTS", 100);
 const RATE_LIMIT_PER_MINUTE = positiveIntegerEnv("X402_GATEWAY_RATE_LIMIT_PER_MINUTE", 300);
 const STRIP_REQUEST_HEADERS = new Set([
@@ -76,8 +76,11 @@ const STRIP_RESPONSE_HEADERS = new Set([
 ]);
 
 type GatewayMetrics = {
-  requests: number;
-  paidRequests: number;
+  httpRequests: number;
+  providerRequests: number;
+  settlements: number;
+  deliveries: number;
+  postSettlementFailures: number;
   verifyFailures: number;
   settleFailures: number;
   upstreamFailures: number;
@@ -86,8 +89,11 @@ type GatewayMetrics = {
 
 function createMetrics(): GatewayMetrics {
   return {
-    requests: 0,
-    paidRequests: 0,
+    httpRequests: 0,
+    providerRequests: 0,
+    settlements: 0,
+    deliveries: 0,
+    postSettlementFailures: 0,
     verifyFailures: 0,
     settleFailures: 0,
     upstreamFailures: 0,
@@ -228,6 +234,102 @@ function isSettleSuccess(settle: any): boolean {
   return settle?.success === true && typeof settle?.transaction === "string" && settle.transaction.length > 0 && typeof settle?.network === "string" && settle.network.length > 0;
 }
 
+function requestFieldError(name: string, location: string, field: import("./config.js").RequestField, raw: unknown): string | undefined {
+  if (raw === undefined || raw === null || raw === "") return field.required ? `missing required ${location}: ${name}` : undefined;
+  if (field.type === "string" && typeof raw !== "string") return `${location} ${name} must be a string`;
+  let value: string | number | boolean = typeof raw === "string" ? raw : String(raw);
+  if (field.type === "integer") {
+    if (!/^-?\d+$/.test(String(value))) return `${location} ${name} must be an integer`;
+    value = Number(value);
+  } else if (field.type === "number") {
+    value = Number(value);
+    if (!Number.isFinite(value)) return `${location} ${name} must be a number`;
+  } else if (field.type === "boolean") {
+    if (!["true", "false"].includes(String(value))) return `${location} ${name} must be true or false`;
+    value = String(value) === "true";
+  } else {
+    value = String(value);
+  }
+  if (typeof value === "string" && field.min_length !== undefined && value.length < field.min_length) return `${location} ${name} is too short`;
+  if (typeof value === "string" && field.max_length !== undefined && value.length > field.max_length) return `${location} ${name} is too long`;
+  if (field.format === "evm_address" && !/^0x[a-fA-F0-9]{40}$/.test(String(value))) return `${location} ${name} must be an EVM address`;
+  if (field.format === "evm_address_list" && !String(value).split(",").every(item => /^0x[a-fA-F0-9]{40}$/.test(item.trim()))) {
+    return `${location} ${name} must be a comma-separated list of EVM addresses`;
+  }
+  if (field.enum && !field.enum.some(candidate => candidate === value || String(candidate) === String(value))) return `${location} ${name} has an unsupported value`;
+  return undefined;
+}
+
+function validateRequestContract(endpoint: NonNullable<ProviderEntry["config"]["endpoints"]>[number], url: URL, request: IncomingMessage, body: Buffer): void {
+  const contract = endpoint.request;
+  if (!contract) return;
+  for (const [name, field] of Object.entries(contract.query ?? {})) {
+    const error = requestFieldError(name, "query parameter", field, url.searchParams.get(name) ?? undefined);
+    if (error) throw new HttpError(400, error);
+  }
+  for (const [name, field] of Object.entries(contract.headers ?? {})) {
+    const raw = request.headers[name.toLowerCase()];
+    const error = requestFieldError(name, "header", field, Array.isArray(raw) ? raw[0] : raw);
+    if (error) throw new HttpError(400, error);
+  }
+  if (!contract.body) return;
+  if (!body.length) {
+    if (contract.body.required) throw new HttpError(400, "request body is required");
+    return;
+  }
+  const expectedContentType = contract.body.content_type;
+  const actualContentType = String(request.headers["content-type"] ?? "").split(";", 1)[0].toLowerCase();
+  if (expectedContentType && actualContentType !== expectedContentType) throw new HttpError(400, `content-type must be ${expectedContentType}`);
+  if (expectedContentType === "application/json" || contract.body.fields) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(body.toString("utf8"));
+    } catch {
+      throw new HttpError(400, "request body must be valid JSON");
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new HttpError(400, "request body must be a JSON object");
+    for (const [name, field] of Object.entries(contract.body.fields ?? {})) {
+      const error = requestFieldError(name, "body field", field, (parsed as Record<string, unknown>)[name]);
+      if (error) throw new HttpError(400, error);
+    }
+  }
+}
+
+function rejectDuplicateQueryParameters(url: URL): void {
+  const seen = new Set<string>();
+  for (const key of url.searchParams.keys()) {
+    if (seen.has(key)) throw new HttpError(400, `duplicate query parameter: ${key}`);
+    seen.add(key);
+  }
+}
+
+function responseField(payload: unknown, field: string): unknown {
+  return field.split(".").reduce<unknown>((value, part) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+    return (value as Record<string, unknown>)[part];
+  }, payload);
+}
+
+function validateResponseContract(
+  endpoint: NonNullable<ProviderEntry["config"]["endpoints"]>[number],
+  response: Response,
+  body: Buffer,
+): void {
+  const contract = endpoint.response?.json;
+  if (!contract) return;
+  const contentType = response.headers.get("content-type")?.split(";", 1)[0].toLowerCase();
+  if (contentType !== "application/json") throw new HttpError(502, "upstream returned an invalid business response");
+  let payload: unknown;
+  try {
+    payload = JSON.parse(body.toString("utf8"));
+  } catch {
+    throw new HttpError(502, "upstream returned an invalid business response");
+  }
+  if (responseField(payload, contract.field) !== contract.equals) {
+    throw new HttpError(502, "upstream returned a business error");
+  }
+}
+
 function isAdminAllowed(request: IncomingMessage): boolean {
   const token = process.env.X402_GATEWAY_ADMIN_TOKEN;
   if (!token) return process.env.X402_GATEWAY_ADMIN_ALLOW_PUBLIC === "true";
@@ -297,7 +399,16 @@ function upstreamUrl(entry: ProviderEntry, request: IncomingMessage, routePath: 
   return upstream;
 }
 
-async function forward(metrics: GatewayMetrics, entry: ProviderEntry, request: IncomingMessage, response: ServerResponse, routePath: string, body: Buffer, paymentResponse?: unknown): Promise<void> {
+async function forward(
+  metrics: GatewayMetrics,
+  entry: ProviderEntry,
+  endpoint: NonNullable<ProviderEntry["config"]["endpoints"]>[number],
+  request: IncomingMessage,
+  response: ServerResponse,
+  routePath: string,
+  body: Buffer,
+  paymentResponse?: unknown,
+): Promise<void> {
   const upstream = upstreamUrl(entry, request, routePath);
   let upstreamResponse: Response;
   try {
@@ -325,6 +436,12 @@ async function forward(metrics: GatewayMetrics, entry: ProviderEntry, request: I
     metrics.upstreamFailures += 1;
     throw error;
   }
+  try {
+    validateResponseContract(endpoint, upstreamResponse, responseBody);
+  } catch (error) {
+    metrics.upstreamFailures += 1;
+    throw error;
+  }
   response.writeHead(upstreamResponse.status, responseHeaders);
   response.end(responseBody);
 }
@@ -337,7 +454,7 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
   const server = http.createServer(async (request, response) => {
     let countedActive = false;
     try {
-      metrics.requests += 1;
+      metrics.httpRequests += 1;
       const url = new URL(request.url ?? "/", "http://local");
       if (url.pathname === "/__402/health") {
         json(response, 200, { ok: true, providers: providers.size });
@@ -375,12 +492,33 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
         if (!isAdminAllowed(request)) return json(response, 401, { error: "unauthorized" });
         response.writeHead(200, { "content-type": "text/plain; version=0.0.4" });
         response.end([
-          `x402_gateway_requests_total ${metrics.requests}`,
-          `x402_gateway_paid_requests_total ${metrics.paidRequests}`,
+          "# HELP x402_gateway_http_requests_total All HTTP requests, including administration endpoints.",
+          "# TYPE x402_gateway_http_requests_total counter",
+          `x402_gateway_http_requests_total ${metrics.httpRequests}`,
+          "# HELP x402_gateway_provider_requests_total Requests matched to a provider route.",
+          "# TYPE x402_gateway_provider_requests_total counter",
+          `x402_gateway_provider_requests_total ${metrics.providerRequests}`,
+          "# HELP x402_gateway_settlements_total Successful on-chain payment settlements.",
+          "# TYPE x402_gateway_settlements_total counter",
+          `x402_gateway_settlements_total ${metrics.settlements}`,
+          "# HELP x402_gateway_deliveries_total Settled requests whose upstream response was delivered.",
+          "# TYPE x402_gateway_deliveries_total counter",
+          `x402_gateway_deliveries_total ${metrics.deliveries}`,
+          "# HELP x402_gateway_post_settlement_failures_total Upstream failures after successful settlement.",
+          "# TYPE x402_gateway_post_settlement_failures_total counter",
+          `x402_gateway_post_settlement_failures_total ${metrics.postSettlementFailures}`,
           `x402_gateway_verify_failures_total ${metrics.verifyFailures}`,
           `x402_gateway_settle_failures_total ${metrics.settleFailures}`,
+          "# HELP x402_gateway_upstream_failures_total All upstream failures, including failures after settlement.",
+          "# TYPE x402_gateway_upstream_failures_total counter",
           `x402_gateway_upstream_failures_total ${metrics.upstreamFailures}`,
           `x402_gateway_rejected_requests_total ${metrics.rejectedRequests}`,
+          "# HELP x402_gateway_requests_total Deprecated alias for x402_gateway_http_requests_total.",
+          "# TYPE x402_gateway_requests_total counter",
+          `x402_gateway_requests_total ${metrics.httpRequests}`,
+          "# HELP x402_gateway_paid_requests_total Deprecated alias for x402_gateway_settlements_total.",
+          "# TYPE x402_gateway_paid_requests_total counter",
+          `x402_gateway_paid_requests_total ${metrics.settlements}`,
           "",
         ].join("\n"));
         return;
@@ -401,6 +539,7 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
         json(response, 404, { error: "endpoint not found" });
         return;
       }
+      metrics.providerRequests += 1;
       const now = Date.now();
       const address = clientAddress(request);
       const rate = rateLimiter.consume(address, now);
@@ -415,11 +554,13 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
       activeRequests += 1;
       countedActive = true;
       const body = await readBody(request);
+      rejectDuplicateQueryParameters(url);
+      validateRequestContract(endpoint, url, request, body);
       const price = priceUsd(endpoint, requestParams(url, body, request));
       const requirements = paymentRequirements(entry.config, price);
       if (price > 0 && !requirements.length) throw new HttpError(500, "paid endpoint has no payment requirements");
       if (!requirements.length) {
-        await forward(metrics, entry, request, response, routePath, body);
+        await forward(metrics, entry, endpoint, request, response, routePath, body);
         return;
       }
       const paymentHeader = request.headers[headers.signature.toLowerCase()];
@@ -446,10 +587,18 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
         json(response, 400, { error: "payment does not match any requirement" });
         return;
       }
-      const verify = await facilitatorPost(entry, "/verify", {
-        paymentPayload: payload,
-        paymentRequirements: requirement,
-      });
+      const paymentVersion = (payload as any).x402Version;
+      let verify;
+      try {
+        verify = await facilitatorPost(entry, "/verify", {
+          x402Version: paymentVersion,
+          paymentPayload: payload,
+          paymentRequirements: requirement,
+        });
+      } catch (error) {
+        metrics.verifyFailures += 1;
+        throw error;
+      }
       if (!isVerifySuccess(verify)) {
         metrics.verifyFailures += 1;
         json(response, 400, { error: "payment verification failed" });
@@ -458,6 +607,7 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
       let settle;
       try {
         settle = await facilitatorPost(entry, "/settle", {
+          x402Version: paymentVersion,
           paymentPayload: payload,
           paymentRequirements: requirement,
         });
@@ -465,15 +615,17 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
         metrics.settleFailures += 1;
         throw error;
       }
-      if (!isSettleSuccess(settle)) {
+      if (!isSettleSuccess(settle) || settle.network !== requirement.network) {
         metrics.settleFailures += 1;
         json(response, 502, { error: "settlement failed" });
         return;
       }
-      metrics.paidRequests += 1;
+      metrics.settlements += 1;
       try {
-        await forward(metrics, entry, request, response, routePath, body, settle);
+        await forward(metrics, entry, endpoint, request, response, routePath, body, settle);
+        metrics.deliveries += 1;
       } catch (error) {
+        metrics.postSettlementFailures += 1;
         const status = error instanceof HttpError ? error.status : 502;
         const extraHeaders = error instanceof HttpError ? error.responseHeaders : {};
         json(response, status, {
