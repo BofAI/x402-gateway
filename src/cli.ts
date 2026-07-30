@@ -105,9 +105,9 @@ Options:
   -v, -V, --version      Show version
 
 Examples:
-  x402-gateway --provider examples/provider.yml --host 127.0.0.1 --port 4020
-  x402-gateway start --providers providers --port 4020
-  x402-gateway check --providers providers --json
+  x402-gateway --provider /path/to/provider.yml --host 127.0.0.1 --port 4020
+  x402-gateway start --providers /path/to/providers --port 4020
+  x402-gateway check --providers /path/to/providers --json
 `;
 }
 

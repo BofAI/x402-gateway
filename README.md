@@ -31,7 +31,7 @@ x402-gateway --help
 Start from a single provider file:
 
 ```bash
-x402-gateway --provider examples/provider.yml --host 127.0.0.1 --port 4020
+x402-gateway --provider /path/to/provider.yml --host 127.0.0.1 --port 4020
 ```
 
 Start from a runtime Provider directory:
@@ -40,26 +40,11 @@ Start from a runtime Provider directory:
 x402-gateway --providers /path/to/providers --host 127.0.0.1 --port 4020
 ```
 
-Validate the generic Base Sepolia USDC example:
-
-```bash
-X402_PROVIDER_FORWARD_URL=https://api.example.com \
-X402_GATEWAY_PUBLIC_BASE_URL=https://gateway.example.com \
-X402_PROVIDER_RECIPIENT_BASE=0x0000000000000000000000000000000000000001 \
-X402_FACILITATOR_URL=https://x402.org/facilitator \
-x402-gateway check --provider examples/base-usdc-provider.yml
-```
-
-The example uses `eip155:84532`, official Base Sepolia USDC, the `exact`
-EIP-3009 flow, and `https://x402.org/facilitator`. Test and production Provider
-configuration is deployed separately and is not stored in this runtime
-repository.
-
 Validate provider files without starting the server:
 
 ```bash
 x402-gateway check --providers /path/to/providers
-x402-gateway check --provider examples/provider.yml --json
+x402-gateway check --provider /path/to/provider.yml --json
 ```
 
 `check` validates provider YAML syntax, required fields, environment expansion,
@@ -134,7 +119,7 @@ deliberately public test deployment, set `X402_GATEWAY_ADMIN_ALLOW_PUBLIC=true`.
 Provider files stay in YAML:
 
 ```yaml
-name: example-price-tron
+name: example-provider
 forward_url: ${X402_PROVIDER_FORWARD_URL}
 
 routing:
@@ -145,13 +130,12 @@ routing:
     value_from_env: X402_PROVIDER_API_TOKEN
 
 operator:
-  network: tron:0xcd8690dc
+  network: ${X402_PROVIDER_NETWORK}
   currencies:
-    usd: ["USDT"]
-  recipient: ${X402_PROVIDER_RECIPIENT_TRON}
+    usd: ["USDC"]
+  recipient: ${X402_PROVIDER_RECIPIENT}
   scheme: exact
   protocol: exact
-  asset_transfer_method: permit2
   facilitator_url: ${X402_FACILITATOR_URL}
   facilitator_api_key_env: X402_FACILITATOR_API_KEY
   valid_for_seconds: 300
@@ -222,10 +206,6 @@ X402_GATEWAY_RATE_LIMIT_PER_MINUTE=300
 X402_GATEWAY_ALLOW_INSECURE_HTTP=false
 X402_FACILITATOR_URL=https://facilitator.bankofai.io
 X402_FACILITATOR_API_KEY=<facilitator-api-key>
-X402_PROVIDER_FORWARD_URL=<upstream-base-url>
-X402_PROVIDER_RECIPIENT_TRON=<recipient-T-address>
-X402_PROVIDER_RECIPIENT_BASE=<recipient-0x-address>
-X402_PROVIDER_API_TOKEN=<upstream-token>
 ```
 
 Provider YAML may also use `operator.facilitator_api_key_env:
@@ -242,9 +222,7 @@ container's internal host or request path is not the public payment URL.
 ## Docker
 
 `docker compose up --build` uses the current checkout and
-`pull_policy: build`; it does not pull the mutable remote `test` image. The
-local GasFree HTTP fixture is intentionally stored under `examples/` and is
-not loaded by default.
+`pull_policy: build`; it does not pull the mutable remote `test` image.
 
 Set `X402_GATEWAY_PROVIDERS_HOST_DIR` to a runtime Provider directory. Compose
 mounts it read-only at `/app/providers`. The fallback `./providers` directory

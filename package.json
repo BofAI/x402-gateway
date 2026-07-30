@@ -5,7 +5,6 @@
   "type": "module",
   "files": [
     "dist",
-    "examples",
     "README.md",
     "LICENSE"
   ],
@@ -15,7 +14,6 @@
   "exports": {
     ".": "./dist/index.js",
     "./config": "./dist/config.js",
-    "./catalog": "./dist/catalog.js",
     "./tokens": "./dist/tokens.js",
     "./server": "./dist/server.js",
     "./x402": "./dist/x402.js",

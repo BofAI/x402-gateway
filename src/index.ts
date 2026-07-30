@@ -15,4 +15,3 @@ export {
   type TokenInfo,
 } from "./tokens.js";
 export type { PaymentRequirement } from "./x402.js";
-export { buildGatewayCatalog, providerCatalogProjection, providerPaymentAssets } from "./catalog.js";
