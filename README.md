@@ -21,12 +21,16 @@ Human-readable aliases such as `tron:nile` remain unsupported.
 ## Development and Release Flow
 
 1. Create each feature or fix branch from the latest `develop`.
-2. Complete development and pass the required checks on that branch.
-3. Update the release version in `package.json`, `package-lock.json`, and the
-   installation example, then tag and publish the tested release commit.
-   A `v*` tag triggers the Docker release workflow.
-4. After the release succeeds, merge the released branch into `main`.
-5. Merge `main` back into `develop`, including the version changes and fixes,
+2. Complete development, pass the required checks, and merge the reviewed PR
+   into `develop`.
+3. After CI passes on `develop`, tag that commit with `test-v*` to publish the
+   Docker `test` image, then deploy it to TN. TN releases must come from
+   `develop`, not an unmerged feature branch.
+4. Complete TN acceptance before preparing the production release. Update the
+   release version in `package.json`, `package-lock.json`, and the installation
+   example, validate the release candidate, then tag and publish it with `v*`.
+5. After the production release succeeds, merge the released commit into `main`.
+6. Merge `main` back into `develop`, including the version changes and fixes,
    before starting the next development branch.
 
 When introducing this workflow to a repository without `develop`, initialize
