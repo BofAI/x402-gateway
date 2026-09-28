@@ -3,7 +3,7 @@ name: gateway-ci
 on:
   pull_request:
   push:
-    branches: [main, feature/x402-sdk-ts]
+    branches: [develop, main, feature/x402-sdk-ts]
     tags: ["test-v*", "v*"]
   workflow_dispatch:
 
