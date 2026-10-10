@@ -3,14 +3,38 @@
 TypeScript reverse proxy for paid HTTP APIs. This version uses the npm
 TypeScript x402 SDK packages only:
 
-- `@bankofai/x402-core@1.0.1`
-- `@bankofai/x402-evm@1.0.1`
-- `@bankofai/x402-tron@1.0.1`
+- `@bankofai/x402-core@1.1.1`
+- `@bankofai/x402-evm@1.1.1`
+- `@bankofai/x402-tron@2.0.0`
 
 Payment requirements support logical `scheme=exact` and TRON
 `scheme=exact_gasfree`. The transfer method is selected by the registered
 asset: Base USDC uses EIP-3009 metadata, while BSC/TRON USDT uses Permit2.
 GasFree uses the TRON GasFree relayer flow without Permit2 metadata.
+
+TRON network IDs follow the decimal CAIP-2 format used by SDK 2.0.0:
+`tron:728126428` (mainnet), `tron:3448148188` (Nile), and
+`tron:2494104990` (Shasta). Gateway configurations using the old hexadecimal
+IDs are normalized to decimal IDs before payment requirements are emitted.
+Human-readable aliases such as `tron:nile` remain unsupported.
+
+## Development and Release Flow
+
+1. Create each feature or fix branch from the latest `develop`.
+2. Complete development, pass the required checks, and merge the reviewed PR
+   into `develop`.
+3. After CI passes on `develop`, tag that commit with `test-v*` to publish the
+   Docker `test` image, then deploy it to TN. TN releases must come from
+   `develop`, not an unmerged feature branch.
+4. Complete TN acceptance before preparing the production release. Update the
+   release version in `package.json`, `package-lock.json`, and the installation
+   example, validate the release candidate, then tag and publish it with `v*`.
+5. After the production release succeeds, merge the released commit into `main`.
+6. Merge `main` back into `develop`, including the version changes and fixes,
+   before starting the next development branch.
+
+When introducing this workflow to a repository without `develop`, initialize
+`develop` from the current `main` once.
 
 ## Install
 
@@ -22,7 +46,7 @@ npm run build
 After installing the npm package globally, use the binary directly:
 
 ```bash
-npm install -g @bankofai/x402-gateway@1.0.2
+npm install -g @bankofai/x402-gateway@1.0.3
 x402-gateway --help
 ```
 
@@ -180,6 +204,28 @@ upstream failure and is not counted as a successful delivery.
 
 Non-CAIP TRON aliases are rejected. Provider files must use canonical TRON
 CAIP-2 IDs.
+
+When upgrading existing provider YAML to TRON SDK 2.0.0, update
+`operator.network` as follows:
+
+| Network | Previous ID | Current ID |
+| --- | --- | --- |
+| TRON Mainnet | `tron:0x2b6653dc` | `tron:728126428` |
+| TRON Nile | `tron:0xcd8690dc` | `tron:3448148188` |
+| TRON Shasta | `tron:0x94a9059e` | `tron:2494104990` |
+
+Existing hexadecimal IDs are normalized for compatibility, but new deployment
+files should use decimal IDs. This does not add tokens or networks to the
+gateway token registry. EVM IDs, token addresses, and payment amounts do not
+change as part of this migration.
+
+Run `x402-gateway check --providers /path/to/providers` with the required
+environment variables set before starting the service. Each provider in a
+directory must be named `provider.yml` or `provider.yaml`, for example
+`providers/defillama/provider.yml`. Confirm that the configured facilitator's
+`/supported` endpoint advertises the decimal network and each payment scheme
+listed in the YAML. Advertise `exact_gasfree` only when that facilitator has
+GasFree enabled.
 
 EVM convenience aliases accepted:
 
