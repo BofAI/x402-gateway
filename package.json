@@ -1,6 +1,6 @@
 {
   "name": "@bankofai/x402-gateway",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": false,
   "type": "module",
   "files": [
@@ -40,6 +40,9 @@
     "typescript": "^5.9.3"
   },
   "overrides": {
-    "ws": "8.21.0"
+    "ws": "8.21.0",
+    "tronweb": {
+      "axios": "1.20.0"
+    }
   }
 }
