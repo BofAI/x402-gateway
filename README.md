@@ -3,16 +3,16 @@
 TypeScript reverse proxy for paid HTTP APIs. This version uses the npm
 TypeScript x402 SDK packages only:
 
-- `@bankofai/x402-core@1.1.1`
-- `@bankofai/x402-evm@1.1.1`
-- `@bankofai/x402-tron@2.0.0`
+- `@x402/core@2.28.0`
+- `@bankofai/x402-tron@2.1.0-beta.3`
+- `@bankofai/x402-tron-extensions@2.1.0-beta.3`
 
 Payment requirements support logical `scheme=exact` and TRON
 `scheme=exact_gasfree`. The transfer method is selected by the registered
 asset: Base USDC uses EIP-3009 metadata, while BSC/TRON USDT uses Permit2.
 GasFree uses the TRON GasFree relayer flow without Permit2 metadata.
 
-TRON network IDs follow the decimal CAIP-2 format used by SDK 2.0.0:
+TRON network IDs follow the decimal CAIP-2 format:
 `tron:728126428` (mainnet), `tron:3448148188` (Nile), and
 `tron:2494104990` (Shasta). Gateway configurations using the old hexadecimal
 IDs are normalized to decimal IDs before payment requirements are emitted.
@@ -192,6 +192,25 @@ of silently changing transfer methods. For GasFree, set both `scheme` and
 `protocol` to `exact_gasfree`; the facilitator must support GasFree for the
 selected TRON network and token.
 
+For first-time TRON Permit2 Approval sponsorship, opt in per endpoint:
+
+```yaml
+endpoints:
+  - method: GET
+    path: /v1/ping
+    payment:
+      trc20_approval_resource_sponsoring: true
+    metering:
+      dimensions:
+        - tiers:
+            - price_usd: 0.000001
+```
+
+This advertises the independent resource extension in the 402 challenge. Clients
+must register its client extension, and the facilitator must provide a sponsoring
+runtime. The flag requires a TRON exact Permit2 requirement; ordinary routes and
+GasFree payments do not advertise it.
+
 Paid endpoints can declare required query parameters, headers, and JSON body
 fields under `request`. Validation runs before the gateway returns a 402, so a
 known-invalid request is never verified or settled. Supported field checks are
@@ -246,6 +265,8 @@ X402_GATEWAY_BUILD_COMMIT=<git-sha>
 X402_GATEWAY_MAX_BODY_BYTES=1000000
 X402_GATEWAY_MAX_RESPONSE_BYTES=20000000
 X402_GATEWAY_FACILITATOR_TIMEOUT_MS=10000
+X402_GATEWAY_RESOURCE_SPONSORING_TIMEOUT_MS=240000
+X402_GATEWAY_GASFREE_TIMEOUT_MS=240000
 X402_GATEWAY_UPSTREAM_TIMEOUT_MS=30000
 X402_GATEWAY_MAX_CONCURRENT_REQUESTS=100
 X402_GATEWAY_RATE_LIMIT_PER_MINUTE=300
@@ -253,6 +274,11 @@ X402_GATEWAY_ALLOW_INSECURE_HTTP=false
 X402_FACILITATOR_URL=https://facilitator.bankofai.io
 X402_FACILITATOR_API_KEY=<facilitator-api-key>
 ```
+
+Resource-sponsored and GasFree payments have separate facilitator timeouts,
+defaulting to at least 240 seconds. Ordinary payments retain the general timeout.
+Each timeout covers receiving the complete response body. These settings do not
+extend the inbound request upload timeout.
 
 Provider YAML may also use `operator.facilitator_api_key_env:
 X402_FACILITATOR_API_KEY` so deployments can inject the facilitator API key via

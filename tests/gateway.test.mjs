@@ -4,7 +4,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
-import { decodePaymentResponseHeader, encodePaymentSignatureHeader } from "@bankofai/x402-core/http";
+import { decodePaymentResponseHeader, encodePaymentSignatureHeader } from "@x402/core/http";
 import { createGatewayServer } from "../dist/server.js";
 import { paymentRequirements } from "../dist/config.js";
 import { getToken, normalizeNetwork, toSmallestUnit } from "../dist/tokens.js";
