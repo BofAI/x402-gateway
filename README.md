@@ -28,8 +28,10 @@ Human-readable aliases such as `tron:nile` remain unsupported.
    `develop`, not an unmerged feature branch.
 4. Complete TN acceptance before preparing the production release. Update the
    release version in `package.json`, `package-lock.json`, and the installation
-   example, validate the release candidate, then tag and publish it with `v*`.
-5. After the production release succeeds, merge the released commit into `main`.
+   example, and validate the release candidate. Open a release PR into `main`.
+5. Merge the reviewed release PR into `main` and wait for CI on that exact
+   commit to pass. Tag that merged main commit with the matching `v*` release
+   version, then wait for the tag pipeline to publish the production image.
 6. Merge `main` back into `develop`, including the version changes and fixes,
    before starting the next development branch.
 
@@ -48,7 +50,7 @@ npm run build
 After installing the npm package globally, use the binary directly:
 
 ```bash
-npm install -g @bankofai/x402-gateway@1.0.3
+npm install -g @bankofai/x402-gateway@1.0.4
 x402-gateway --help
 ```
 
