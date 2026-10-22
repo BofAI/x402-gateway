@@ -38,6 +38,8 @@ When introducing this workflow to a repository without `develop`, initialize
 
 ## Install
 
+Requires Node.js 22.23.4+ (22.x), 24.22.1+ (24.x), or 26.12.1+. Docker and CI use 22.23.4.
+
 ```bash
 npm install
 npm run build
