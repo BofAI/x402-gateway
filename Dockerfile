@@ -5,12 +5,12 @@ ENV HOME=/home/node
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci --include=dev
+RUN npm ci --include=dev --no-audit --no-fund
 
 COPY tsconfig.json README.md LICENSE ./
 COPY src/ ./src/
 RUN npm run build \
-    && npm prune --omit=dev \
+    && npm prune --omit=dev --no-audit --no-fund \
     && chmod +x /app/dist/cli.js \
     && ln -s /app/dist/cli.js /usr/local/bin/x402-gateway
 
