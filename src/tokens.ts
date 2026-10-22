@@ -1,3 +1,5 @@
+import { TRON_MAINNET, TRON_NILE, TRON_SHASTA, normalizeTronNetwork } from "@bankofai/x402-tron";
+
 export type TokenInfo = {
   address: string;
   decimals: number;
@@ -8,11 +10,11 @@ export type TokenInfo = {
 };
 
 export const TOKENS: Record<string, Record<string, TokenInfo>> = {
-  "tron:0x2b6653dc": {
+  [TRON_MAINNET]: {
     USDT: { address: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", decimals: 6, name: "Tether USD", symbol: "USDT", assetTransferMethod: "permit2" },
     USDD: { address: "TXDk8mbtRbXeYuMNS83CfKPaYYT8XWv9Hz", decimals: 18, name: "Decentralized USD", symbol: "USDD", assetTransferMethod: "permit2" },
   },
-  "tron:0xcd8690dc": {
+  [TRON_NILE]: {
     USDT: { address: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf", decimals: 6, name: "Tether USD", symbol: "USDT", assetTransferMethod: "permit2" },
     USDD: { address: "TGjgvdTWWrybVLaVeFqSyVqJQWjxqRYbaK", decimals: 18, name: "Decentralized USD", symbol: "USDD", assetTransferMethod: "permit2" },
   },
@@ -33,15 +35,15 @@ export const TOKENS: Record<string, Record<string, TokenInfo>> = {
 
 export function normalizeNetwork(network: string): string {
   const legacyTronIds: Record<string, string> = {
-    "tron-mainnet": "tron:0x2b6653dc",
-    "tron:mainnet": "tron:0x2b6653dc",
-    mainnet: "tron:0x2b6653dc",
-    "tron-shasta": "tron:0x94a9059e",
-    "tron:shasta": "tron:0x94a9059e",
-    shasta: "tron:0x94a9059e",
-    "tron-nile": "tron:0xcd8690dc",
-    "tron:nile": "tron:0xcd8690dc",
-    nile: "tron:0xcd8690dc",
+    "tron-mainnet": TRON_MAINNET,
+    "tron:mainnet": TRON_MAINNET,
+    mainnet: TRON_MAINNET,
+    "tron-shasta": TRON_SHASTA,
+    "tron:shasta": TRON_SHASTA,
+    shasta: TRON_SHASTA,
+    "tron-nile": TRON_NILE,
+    "tron:nile": TRON_NILE,
+    nile: TRON_NILE,
   };
   const canonical = legacyTronIds[network];
   if (canonical) {
@@ -52,7 +54,7 @@ export function normalizeNetwork(network: string): string {
     "bsc-testnet": "eip155:97",
     "base-mainnet": "eip155:8453",
     "base-sepolia": "eip155:84532",
-  }[network] ?? network;
+  }[network] ?? normalizeTronNetwork(network);
 }
 
 export function getToken(network: string, symbol: string): TokenInfo {

@@ -128,10 +128,10 @@ test("amount conversion handles tiny decimal prices without producing zero", () 
 });
 
 test("legacy TRON aliases are rejected in favor of canonical CAIP-2 IDs", () => {
-  assert.throws(() => normalizeNetwork("tron:nile"), /use tron:0xcd8690dc/);
-  assert.throws(() => normalizeNetwork("tron-nile"), /use tron:0xcd8690dc/);
-  assert.throws(() => normalizeNetwork("tron:mainnet"), /use tron:0x2b6653dc/);
-  assert.throws(() => normalizeNetwork("tron:shasta"), /use tron:0x94a9059e/);
+  assert.throws(() => normalizeNetwork("tron:nile"), /use tron:3448148188/);
+  assert.throws(() => normalizeNetwork("tron-nile"), /use tron:3448148188/);
+  assert.throws(() => normalizeNetwork("tron:mainnet"), /use tron:728126428/);
+  assert.throws(() => normalizeNetwork("tron:shasta"), /use tron:2494104990/);
 });
 
 test("Base USDC requirements use exact EIP-3009 metadata and six decimals", () => {
@@ -160,6 +160,53 @@ test("Base USDC requirements use exact EIP-3009 metadata and six decimals", () =
   assert.equal(requirements[0].amount, "1000");
   assert.equal(requirements[0].asset, "0x036CbD53842c5426634e7929541eC2318f3dCF7e");
   assert.deepEqual(requirements[0].extra, { name: "USDC", version: "2" });
+});
+
+test("legacy hexadecimal TRON configurations complete payments with decimal network IDs", async () => {
+  const upstream = await startUpstream();
+  for (const [network, canonical, asset] of [
+    ["tron:0x2b6653dc", "tron:728126428", "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"],
+    ["tron:0xcd8690dc", "tron:3448148188", "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"],
+  ]) {
+    const receivedBodies = [];
+    const facilitatorUrl = await startFacilitator({
+      "/verify": async (request, response) => {
+        receivedBodies.push(await requestJson(request));
+        json(response, 200, { isValid: true });
+      },
+      "/settle": async (request, response) => {
+        receivedBodies.push(await requestJson(request));
+        json(response, 200, { success: true, transaction: "test-transaction", network: canonical });
+      },
+    });
+    const gatewayUrl = await startGateway({
+      facilitatorUrl, upstreamUrl: upstream.url, network,
+      recipient: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
+    });
+    const response = await fetch(`${gatewayUrl}/providers/paid-provider/price/usdt`);
+    assert.equal(response.status, 402);
+    const challenge = await response.json();
+    assert.equal(challenge.accepts[0].network, canonical);
+    assert.equal(challenge.accepts[0].asset, asset);
+    assert.equal(challenge.accepts[0].amount, "1");
+    assert.deepEqual(challenge.accepts[0].extra, { assetTransferMethod: "permit2" });
+
+    const paidResponse = await fetch(`${gatewayUrl}/providers/paid-provider/price/usdt`, {
+      headers: {
+        "PAYMENT-SIGNATURE": encodePaymentSignatureHeader({
+          x402Version: 2, accepted: challenge.accepts[0], payload: { signature: "test" },
+        }),
+      },
+    });
+    assert.equal(paidResponse.status, 200);
+    assert.deepEqual(await paidResponse.json(), { ok: true });
+    assert.deepEqual(receivedBodies.map(body => body.paymentRequirements.network), [canonical, canonical]);
+    assert.deepEqual(receivedBodies.map(body => body.paymentPayload.accepted.network), [canonical, canonical]);
+    const settlement = decodePaymentResponseHeader(paidResponse.headers.get("PAYMENT-RESPONSE"));
+    assert.equal(settlement.network, canonical);
+  }
+  assert.equal(upstream.hits(), 2);
+  assert.equal(normalizeNetwork("tron:0x94a9059e"), "tron:2494104990");
 });
 
 test("length constraints are rejected for non-string request fields", () => {
@@ -194,7 +241,7 @@ test("TRON GasFree providers emit exact_gasfree requirements without Permit2 met
     name: "gasfree-provider",
     forward_url: "https://example.com",
     operator: {
-      network: "tron:0xcd8690dc",
+      network: "tron:3448148188",
       recipient: "TTX1Us19zqsLXhY39PPR7KRUoMa93s3J3i",
       scheme: "exact_gasfree",
       currencies: { usd: ["USDT"] },
@@ -203,7 +250,7 @@ test("TRON GasFree providers emit exact_gasfree requirements without Permit2 met
   }, 0.000001);
 
   assert.equal(requirements[0].scheme, "exact_gasfree");
-  assert.equal(requirements[0].network, "tron:0xcd8690dc");
+  assert.equal(requirements[0].network, "tron:3448148188");
   assert.deepEqual(requirements[0].extra, {});
 });
 
@@ -212,7 +259,7 @@ test("TRON providers can advertise Exact Permit2 and GasFree together", () => {
     name: "dual-tron-provider",
     forward_url: "https://example.com",
     operator: {
-      network: "tron:0x2b6653dc",
+      network: "tron:728126428",
       recipient: "TLXPgJVJFgL97gc49j8w8kC22mDTpH9EGa",
       schemes: ["exact", "exact_gasfree"],
       currencies: { usd: ["USDT"] },
@@ -305,7 +352,7 @@ test("GasFree challenges omit legacy facilitator fee quotes", async () => {
   const gatewayUrl = await startGateway({
     facilitatorUrl,
     upstreamUrl: upstream.url,
-    network: "tron:0xcd8690dc",
+    network: "tron:3448148188",
     recipient: "TTX1Us19zqsLXhY39PPR7KRUoMa93s3J3i",
     scheme: "exact_gasfree",
   });
