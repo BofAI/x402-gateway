@@ -7,6 +7,10 @@ TypeScript x402 SDK packages only:
 - `@bankofai/x402-tron@2.1.0`
 - `@bankofai/x402-tron-extensions@2.1.0`
 
+Repository and Docker installations override Zod to `4.6.6` so constrained
+collections fail before element validation. Keep the override when refreshing
+dependencies; regression tests exercise the official Core schemas and SDK 2.0 payloads.
+
 Payment requirements support logical `scheme=exact` and TRON
 `scheme=exact_gasfree`. The transfer method is selected by the registered
 asset: Base USDC uses EIP-3009 metadata, while BSC/TRON USDT uses Permit2.
