@@ -4,8 +4,8 @@ TypeScript reverse proxy for paid HTTP APIs. This version uses the npm
 TypeScript x402 SDK packages only:
 
 - `@x402/core@2.28.0`
-- `@bankofai/x402-tron@2.1.0-beta.3`
-- `@bankofai/x402-tron-extensions@2.1.0-beta.3`
+- `@bankofai/x402-tron@2.1.0`
+- `@bankofai/x402-tron-extensions@2.1.0`
 
 Payment requirements support logical `scheme=exact` and TRON
 `scheme=exact_gasfree`. The transfer method is selected by the registered
@@ -38,7 +38,7 @@ When introducing this workflow to a repository without `develop`, initialize
 
 ## Install
 
-Requires Node.js 22.23.4+ (22.x), 24.22.1+ (24.x), or 26.12.1+. Docker and CI use 22.23.4.
+Requires Node.js 24.22.1+ (24.x) or 26.12.1+. Docker and CI pin 24.22.1.
 
 ```bash
 npm install
