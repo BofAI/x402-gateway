@@ -1,6 +1,7 @@
 import http, { IncomingMessage, ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import { URL } from "node:url";
+import { declareTrc20ApprovalResourceSponsoringExtension, TRC20_APPROVAL_RESOURCE_SPONSORING } from "@bankofai/x402-tron-extensions/trc20-approval-resource-sponsoring";
 import type { ProviderEntry } from "./config.js";
 import { endpointFor, paymentRequirements, priceUsd } from "./config.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
@@ -34,6 +35,12 @@ function positiveIntegerEnv(name: string, fallback: number): number {
 
 const MAX_BODY_BYTES = positiveIntegerEnv("X402_GATEWAY_MAX_BODY_BYTES", 1_000_000);
 const FACILITATOR_TIMEOUT_MS = positiveIntegerEnv("X402_GATEWAY_FACILITATOR_TIMEOUT_MS", 10_000);
+const RESOURCE_SPONSORING_TIMEOUT_MS = positiveIntegerEnv(
+  "X402_GATEWAY_RESOURCE_SPONSORING_TIMEOUT_MS", Math.max(240_000, FACILITATOR_TIMEOUT_MS),
+);
+const GASFREE_TIMEOUT_MS = positiveIntegerEnv(
+  "X402_GATEWAY_GASFREE_TIMEOUT_MS", Math.max(240_000, FACILITATOR_TIMEOUT_MS),
+);
 const UPSTREAM_TIMEOUT_MS = positiveIntegerEnv("X402_GATEWAY_UPSTREAM_TIMEOUT_MS", 30_000);
 const MAX_RESPONSE_BYTES = positiveIntegerEnv("X402_GATEWAY_MAX_RESPONSE_BYTES", 20_000_000);
 const MAX_CONCURRENT_REQUESTS = positiveIntegerEnv("X402_GATEWAY_MAX_CONCURRENT_REQUESTS", 100);
@@ -118,13 +125,14 @@ function json(response: ServerResponse, status: number, body: unknown, extraHead
   response.end(JSON.stringify(body));
 }
 
-async function fetchWithTimeout(url: URL, init: RequestInit, timeoutMs: number, label = "upstream"): Promise<Response> {
+async function fetchWithTimeout(url: URL, init: RequestInit, timeoutMs: number, label = "upstream", limit = MAX_RESPONSE_BYTES): Promise<{ response: Response; body: Buffer }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, { ...init, redirect: "manual", signal: controller.signal });
     if (response.status >= 300 && response.status < 400) throw new HttpError(502, `${label} redirect refused`);
-    return response;
+    const body = await readResponseBytes(response, limit);
+    return { response, body };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") throw new HttpError(504, `${label} request timed out`);
     throw error;
@@ -148,18 +156,19 @@ async function readResponseBytes(response: Response, limit = MAX_RESPONSE_BYTES)
   return Buffer.concat(chunks);
 }
 
-async function facilitatorPost(entry: ProviderEntry, path: string, body: unknown): Promise<any> {
+async function facilitatorPost(entry: ProviderEntry, path: string, body: unknown, timeoutMs: number): Promise<any> {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (entry.facilitatorApiKey) {
     headers["x-api-key"] = entry.facilitatorApiKey;
   }
-  const response = await fetchWithTimeout(
+  const { response, body: responseBody } = await fetchWithTimeout(
     new URL(path.replace(/^\/+/, ""), `${entry.facilitatorUrl.replace(/\/+$/, "")}/`),
     { method: "POST", headers, body: JSON.stringify(body) },
-    FACILITATOR_TIMEOUT_MS,
+    timeoutMs,
     "facilitator",
+    Math.min(MAX_RESPONSE_BYTES, 1_000_000),
   );
-  const text = (await readResponseBytes(response, Math.min(MAX_RESPONSE_BYTES, 1_000_000))).toString("utf8");
+  const text = responseBody.toString("utf8");
   let data: any = {};
   try {
     data = text ? JSON.parse(text) : {};
@@ -181,6 +190,13 @@ async function facilitatorPost(entry: ProviderEntry, path: string, body: unknown
     throw new HttpError(502, "facilitator request failed", `facilitator ${path} failed: ${response.status}`);
   }
   return data;
+}
+
+function hasResourceSponsoringExtension(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+  const extensions = (payload as Record<string, unknown>).extensions;
+  return extensions !== null && typeof extensions === "object" && !Array.isArray(extensions) &&
+    Object.hasOwn(extensions, TRC20_APPROVAL_RESOURCE_SPONSORING.key);
 }
 
 function configuredPublicBaseUrl(): string | undefined {
@@ -411,12 +427,13 @@ async function forward(
 ): Promise<void> {
   const upstream = upstreamUrl(entry, request, routePath);
   let upstreamResponse: Response;
+  let responseBody: Buffer;
   try {
-    upstreamResponse = await fetchWithTimeout(upstream, {
+    ({ response: upstreamResponse, body: responseBody } = await fetchWithTimeout(upstream, {
       method: request.method,
       headers: upstreamHeaders(request, entry),
       body: ["GET", "HEAD"].includes(request.method ?? "GET") ? undefined : new Uint8Array(body),
-    }, UPSTREAM_TIMEOUT_MS);
+    }, UPSTREAM_TIMEOUT_MS));
   } catch (error) {
     metrics.upstreamFailures += 1;
     if (error instanceof HttpError) throw error;
@@ -429,13 +446,6 @@ async function forward(
     }
   });
   if (paymentResponse) responseHeaders[headers.response] = encodeResponse(paymentResponse);
-  let responseBody: Buffer;
-  try {
-    responseBody = await readResponseBytes(upstreamResponse);
-  } catch (error) {
-    metrics.upstreamFailures += 1;
-    throw error;
-  }
   try {
     validateResponseContract(endpoint, upstreamResponse, responseBody);
   } catch (error) {
@@ -571,6 +581,11 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
           error: "Payment required",
           resource: { url: resourceUrl(url, publicBaseUrl) },
           accepts,
+          ...(endpoint.payment?.trc20_approval_resource_sponsoring &&
+            accepts.some(requirement => requirement.network.startsWith("tron:") &&
+              requirement.scheme === "exact" && requirement.extra.assetTransferMethod === "permit2")
+            ? { extensions: declareTrc20ApprovalResourceSponsoringExtension() }
+            : {}),
         };
         json(response, 402, challenge, { [headers.required]: encodeRequired(challenge) });
         return;
@@ -587,6 +602,15 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
         json(response, 400, { error: "payment does not match any requirement" });
         return;
       }
+      let facilitatorTimeoutMs = FACILITATOR_TIMEOUT_MS;
+      if (requirement.network.startsWith("tron:")) {
+        if (requirement.scheme === "exact_gasfree") {
+          facilitatorTimeoutMs = GASFREE_TIMEOUT_MS;
+        } else if (endpoint.payment?.trc20_approval_resource_sponsoring === true &&
+          requirement.extra.assetTransferMethod === "permit2" && hasResourceSponsoringExtension(payload)) {
+          facilitatorTimeoutMs = RESOURCE_SPONSORING_TIMEOUT_MS;
+        }
+      }
       const paymentVersion = (payload as any).x402Version;
       let verify;
       try {
@@ -594,7 +618,7 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
           x402Version: paymentVersion,
           paymentPayload: payload,
           paymentRequirements: requirement,
-        });
+        }, facilitatorTimeoutMs);
       } catch (error) {
         metrics.verifyFailures += 1;
         throw error;
@@ -610,7 +634,7 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
           x402Version: paymentVersion,
           paymentPayload: payload,
           paymentRequirements: requirement,
-        });
+        }, facilitatorTimeoutMs);
       } catch (error) {
         metrics.settleFailures += 1;
         throw error;
@@ -647,6 +671,8 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
       if (countedActive) activeRequests -= 1;
     }
   });
+  // Node requestTimeout limits receiving the inbound request, not waiting for
+  // facilitator responses. Resource sponsorship must not expand slow-upload windows.
   server.requestTimeout = UPSTREAM_TIMEOUT_MS + FACILITATOR_TIMEOUT_MS * 2 + 5_000;
   server.headersTimeout = Math.min(server.requestTimeout, 60_000);
   server.keepAliveTimeout = 5_000;

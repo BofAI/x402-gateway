@@ -2,7 +2,7 @@ import {
   decodePaymentSignatureHeader,
   encodePaymentRequiredHeader,
   encodePaymentResponseHeader,
-} from "@bankofai/x402-core/http";
+} from "@x402/core/http";
 
 export const headers = {
   required: "PAYMENT-REQUIRED",
