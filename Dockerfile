@@ -1,16 +1,16 @@
-FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+FROM node:22.23.4-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d
 
 ENV HOME=/home/node
 
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci --include=dev
+RUN npm ci --include=dev --no-audit --no-fund
 
 COPY tsconfig.json README.md LICENSE ./
 COPY src/ ./src/
 RUN npm run build \
-    && npm prune --omit=dev \
+    && npm prune --omit=dev --no-audit --no-fund \
     && chmod +x /app/dist/cli.js \
     && ln -s /app/dist/cli.js /usr/local/bin/x402-gateway
 
