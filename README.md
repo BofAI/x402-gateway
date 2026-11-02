@@ -3,9 +3,9 @@
 TypeScript reverse proxy for paid HTTP APIs. This version uses the npm
 TypeScript x402 SDK packages only:
 
-- `@x402/core@2.28.0`
-- `@bankofai/x402-tron@2.1.0`
-- `@bankofai/x402-tron-extensions@2.1.0`
+- `@x402/core@2.29.0`
+- `@bankofai/x402-tron@2.1.1`
+- `@bankofai/x402-tron-extensions@2.1.1`
 
 Repository and Docker installations override Zod to `4.6.6` so constrained
 collections fail before element validation. Keep the override when refreshing
@@ -104,6 +104,10 @@ If the endpoint has metering, the gateway returns `402 Payment Required` with a
 `PAYMENT-REQUIRED` header. After the client retries with `PAYMENT-SIGNATURE`,
 the gateway verifies and settles with the facilitator, then forwards to the
 configured upstream.
+
+A payment whose Permit2 nonce has already been consumed returns HTTP `400` with
+`code: "permit2_nonce_consumed"`; the gateway does not forward it upstream.
+Ambiguous settlement failures and mismatched settlement networks return HTTP `502`.
 
 ## CLI
 
