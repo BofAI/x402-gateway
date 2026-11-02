@@ -641,7 +641,13 @@ export function createGatewayServer(providers: Map<string, ProviderEntry>): http
       }
       if (!isSettleSuccess(settle) || settle.network !== requirement.network) {
         metrics.settleFailures += 1;
-        json(response, 502, { error: "settlement failed" });
+        // A consumed authorization is a definitive client rejection. Keep
+        // ambiguous transactions and other facilitator failures as upstream errors.
+        const consumed = settle?.success === false && settle.network === requirement.network &&
+          settle.errorReason === "permit2_nonce_consumed" && settle.transaction === "";
+        json(response, consumed ? 400 : 502, consumed
+          ? { error: "payment authorization already used", code: "permit2_nonce_consumed" }
+          : { error: "settlement failed" });
         return;
       }
       metrics.settlements += 1;

@@ -105,6 +105,10 @@ If the endpoint has metering, the gateway returns `402 Payment Required` with a
 the gateway verifies and settles with the facilitator, then forwards to the
 configured upstream.
 
+A payment whose Permit2 nonce has already been consumed returns HTTP `400` with
+`code: "permit2_nonce_consumed"`; the gateway does not forward it upstream.
+Ambiguous settlement failures and mismatched settlement networks return HTTP `502`.
+
 ## CLI
 
 ```text

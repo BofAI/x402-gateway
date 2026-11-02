@@ -530,6 +530,40 @@ test("explicit settlement failure is not overridden by transaction metadata", as
   assert.equal(upstream.hits(), 0);
 });
 
+for (const [label, overrides, status] of [
+  ["consumed authorization", {}, 400],
+  ["different network", { network: "eip155:97" }, 502],
+  ["missing network", { network: undefined }, 502],
+  ["unknown rejection", { errorReason: "unknown_chain_state" }, 502],
+  ["ambiguous transaction", { transaction: "pending-transaction" }, 502],
+  ["non-boolean failure", { success: "false" }, 502],
+]) {
+  test(`settlement rejects ${label} without upstream delivery`, async () => {
+    const upstream = await startUpstream();
+    const facilitatorUrl = await startFacilitator({
+      "/verify": (_request, response) => json(response, 200, { isValid: true }),
+      "/settle": (_request, response) => json(response, 200, {
+        success: false, network: "eip155:56", transaction: "", errorReason: "permit2_nonce_consumed", ...overrides,
+      }),
+    });
+    const gatewayUrl = await startGateway({ facilitatorUrl, upstreamUrl: upstream.url });
+    const signature = encodePaymentSignatureHeader({ x402Version: 2, accepted: {
+      scheme: "exact", network: "eip155:56", amount: "1000000000000",
+      asset: "0x55d398326f99059fF775485246999027B3197955",
+      payTo: "0x7bac3352Bc5F342DcaFA573749aA4502CB12dA86",
+    }, signature: "test" });
+    const response = await fetch(`${gatewayUrl}/providers/paid-provider/price/usdt`, {
+      headers: { "PAYMENT-SIGNATURE": signature },
+    });
+    assert.equal(response.status, status);
+    assert.deepEqual(await response.json(), status === 400
+      ? { error: "payment authorization already used", code: "permit2_nonce_consumed" }
+      : { error: "settlement failed" });
+    assert.equal(response.headers.get("PAYMENT-RESPONSE"), null);
+    assert.equal(upstream.hits(), 0);
+  });
+}
+
 test("facilitator failures log status and routing metadata without payment payloads", async () => {
   const upstream = await startUpstream();
   const facilitatorUrl = await startFacilitator({
