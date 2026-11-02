@@ -3,9 +3,9 @@
 TypeScript reverse proxy for paid HTTP APIs. This version uses the npm
 TypeScript x402 SDK packages only:
 
-- `@x402/core@2.28.0`
-- `@bankofai/x402-tron@2.1.0`
-- `@bankofai/x402-tron-extensions@2.1.0`
+- `@x402/core@2.29.0`
+- `@bankofai/x402-tron@2.1.1`
+- `@bankofai/x402-tron-extensions@2.1.1`
 
 Repository and Docker installations override Zod to `4.6.6` so constrained
 collections fail before element validation. Keep the override when refreshing
