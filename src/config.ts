@@ -36,6 +36,9 @@ export type ProviderConfig = {
   endpoints?: Array<{
     method: string;
     path: string;
+    payment?: {
+      trc20_approval_resource_sponsoring?: boolean;
+    };
     request?: {
       query?: Record<string, RequestField>;
       headers?: Record<string, RequestField>;
@@ -246,6 +249,15 @@ function validateProvider(config: ProviderConfig, file: string): void {
     const key = `${method} ${endpoint.path}`;
     if (seen.has(key)) throw new Error(`${file}: duplicate endpoint ${key}`);
     seen.add(key);
+    if (endpoint.payment !== undefined) {
+      if (!endpoint.payment || typeof endpoint.payment !== "object" || Array.isArray(endpoint.payment)) {
+        throw new Error(`${file}: endpoints[${index}].payment must be an object`);
+      }
+      const sponsoring = endpoint.payment.trc20_approval_resource_sponsoring;
+      if (sponsoring !== undefined && typeof sponsoring !== "boolean") {
+        throw new Error(`${file}: endpoints[${index}].payment.trc20_approval_resource_sponsoring must be a boolean`);
+      }
+    }
     validateRequestContract(endpoint, file, `endpoints[${index}]`);
     validateResponseContract(endpoint, file, `endpoints[${index}]`);
     validateMetering(endpoint, file, `endpoints[${index}]`);
@@ -337,6 +349,13 @@ function validatePaymentCapabilities(config: ProviderConfig, file: string): void
   if (!validRecipient) throw new Error(`${file}: operator.recipient must be a valid address or a resolvable recipient alias`);
 
   for (const endpoint of config.endpoints ?? []) {
+    if (endpoint.payment?.trc20_approval_resource_sponsoring) {
+      const requirements = paymentRequirements(config, 1);
+      if (!requirements.some(requirement => requirement.network.startsWith("tron:") &&
+        requirement.scheme === "exact" && requirement.extra.assetTransferMethod === "permit2")) {
+        throw new Error(`${file}: ${endpoint.method} ${endpoint.path} resource sponsoring requires TRON exact Permit2`);
+      }
+    }
     if (!endpoint.metering) continue;
     const prices = [endpoint.metering.dimensions?.[0]?.tiers?.[0]?.price_usd,
       ...(endpoint.metering.variants ?? []).map(variant => variant.dimensions?.[0]?.tiers?.[0]?.price_usd)]

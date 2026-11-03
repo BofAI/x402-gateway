@@ -1,0 +1,43 @@
+{
+  "provenance": {
+    "sdk": "@bankofai/x402-tron@2.0.0",
+    "core": "@bankofai/x402-core@1.1.1",
+    "registry": "https://registry.npmjs.org",
+    "signedAtMs": 1792108800000,
+    "testPrivateKey": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "paymentPayload": {
+    "x402Version": 2,
+    "payload": {
+      "signature": "0x41d54e03d2755d32af965059bf639a902ecbfd467eb83e7a313ab37de987d0de731815bc834b16351564aeead3e5158b96fb12c5f28f6f9c39086558248ddbb21c",
+      "permit2Authorization": {
+        "from": "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a",
+        "permitted": {
+          "token": "0xeca9bc828a3005b9a3b909f2cc5c2a54794de05f",
+          "amount": "1000"
+        },
+        "spender": "0x3a2c916ce2b40f0ffc06cc80c0f72c0fc25be105",
+        "nonce": "0x2d13af3ee471016c0deffb66321a0d37fd4a142dbd31e1093bc5933acdc8e21a",
+        "deadline": "1792109100",
+        "witness": {
+          "to": "0xc07dd50922d7750a27083669ce6e1a998b57f996",
+          "validAfter": "0"
+        }
+      }
+    },
+    "resource": {
+      "url": "/providers/compat/paid"
+    },
+    "accepted": {
+      "scheme": "exact",
+      "network": "tron:3448148188",
+      "amount": "1000",
+      "asset": "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
+      "payTo": "TTX1Us19zqsLXhY39PPR7KRUoMa93s3J3i",
+      "maxTimeoutSeconds": 300,
+      "extra": {
+        "assetTransferMethod": "permit2"
+      }
+    }
+  }
+}
